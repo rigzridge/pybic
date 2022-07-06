@@ -57,7 +57,7 @@ class BicAn:
     mb = [] # Mean b^2
     sb = [] # Std dev of b^2
 
-    # Functions
+    # Methods
     def __init__(bic,raw):
     # ------------------
     # Constructor
@@ -93,12 +93,12 @@ class BicAn:
         #plt.xlabel("Time [s]")
         #plt.ylabel("Amplitude [arb.]")
         #plt.title("Test signal!")
-        
+
         #fig.set_size_inches(18, 16)
+        ax.invert_yaxis()
         plt.show()
         
-
-
+        
     def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     # ------------------
     # Provides FM test signal
@@ -113,7 +113,6 @@ class BicAn:
         z = Az*np.sin( 2*np.pi*(fx*t + fy*t + dfx + dfy) ) # f1 + f2
 
         sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
-
         return sig, t, fS
 
     def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
@@ -151,9 +150,14 @@ class BicAn:
 
                 DFT = np.fft.fft(Ym)/nfreq  # Limit and normalize by vector length
 
-                fft_coeffs[k,0:lim-1] = DFT[0:lim-1]  # Get interested parties
+                fft_coeffs[k,0:lim] = DFT[0:lim]  # Get interested parties
                 dumft    = np.abs(fft_coeffs[k,:])    # Dummy for abs(coeffs)
                 err[k,m] = dumft.sum()/len(dumft)     # Mean of PSD slice
+
+                if err[k,m]>=errlim:
+                    fft_coeffs[k,:] = 0*fft_coeffs[k,:] # Blank if mean excessive
+                    Ntoss += 1
+
                 afft[k,:]  += dumft                   # Welch's PSD
                 spec[:,m,k] = fft_coeffs[k,:]         # Build spectrogram
 
@@ -163,6 +167,35 @@ class BicAn:
         freq_vec = freq_vec[0:lim]; 
         afft /= M     
         return spec,afft,freq_vec,time_vec,err,Ntoss
+
+
+    def ApplyCWT(sig,samprate,sigma):
+    # ------------------
+    # Wavelet static method
+    # ------------------
+        Nsig = len(sig)
+        nyq  = Nsig//2
+
+        f0 = samprate/Nsig
+        freq_vec = np.arange(nyq)*f0
+        
+        CWT = np.zeros((nyq,nyq))
+
+        fft_sig = np.fft.fft(sig)
+        fft_sig = fft_sig[0:nyq]
+
+        # Morlet wavelet in frequency space
+        Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
+
+        print(' Working...      ')
+        for a in range(nyq):
+            LoadBar(a,nyq-1);
+            # Apply for each scale (read: frequency)
+            CWT[a,:] = np.fft.ifft(fft_sig * Psi(a+1))
+        print('\b\b\b^]\n')
+
+        time_vec = np.arange(0,Nsig,2)/samprate
+        return CWT,freq_vec,time_vec
 
 def LoadBar(m,M):
 # ------------------
