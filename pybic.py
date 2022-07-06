@@ -62,7 +62,7 @@ class BicAn:
     # ------------------
     # Constructor
     # ------------------
-        bic.raw = raw
+        bic.Raw = raw
 
     def PlotTest(t,sig):
     # ------------------
@@ -71,18 +71,38 @@ class BicAn:
         import matplotlib.pyplot as plt
 
         plt.plot(t,sig)
-        plt.xlabel("Time [Hz]")
+        plt.xlabel("Time [s]")
         plt.ylabel("Amplitude [arb.]")
         plt.title("Test signal!")
         plt.show()
+
+    def ImageTest(dats):
+    # ------------------
+    # Debugger for plots
+    # ------------------
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+        fig, ax = plt.subplots()
+
+        im = ax.imshow(dats, cmap='plasma')
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        fig.colorbar(im, cax=cax)
+
+        #plt.xlabel("Time [s]")
+        #plt.ylabel("Amplitude [arb.]")
+        #plt.title("Test signal!")
+        
+        #fig.set_size_inches(18, 16)
+        plt.show()
+        
 
 
     def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     # ------------------
     # Provides FM test signal
-    # ------------------
-        import numpy as np
-        
+    # ------------------        
         t = np.arange(0,tend,1/fS)  # Time-vector sampled at "fS" Hz
 
         # Make 3 sinusoidal signals...
@@ -94,6 +114,61 @@ class BicAn:
 
         sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
 
-        return sig, t
+        return sig, t, fS
 
+    def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
+    # ------------------
+    # STFT static method
+    # ------------------
+        N = 1
+        M = 1 + (len(sig) - subint)//step 
+        lim  = nfreq//2                 # lim = |_ Nyquist/res _|
+        time_vec = np.zeros(M)          # Time vector
+        err  = np.zeros((N,M))          # Mean information
+        spec = np.zeros((lim,M,N))      # Spectrogram
+        fft_coeffs = np.zeros((N,lim))  # Coeffs for slice
+        afft = np.zeros((N,lim))        # Coeffs for slice
+        Ntoss = 0;                      # Number of removed slices
         
+        win = np.sin(np.pi*np.arange(nfreq)/(nfreq-1)) # Apply Hann window
+        
+        print(' Working...      ')
+        for m in range(M):
+            LoadBar(m,M-1);
+
+            time_vec[m] = t0 + m*step/samprate
+            for k in range(N):
+                Ym = sig[m*step : m*step + subint] # Select subinterval 
+                #Ym = sig[k,0:subint-1 + m*step] # Select subinterval     
+                Ym = Ym[0:nfreq]            # Take only what is needed for res
+                if detrend:                 # Remove linear least-squares fit
+                    dumx = np.arange(1,nfreq+1) 
+                    dumxy = dumx*Ym
+                    s = (6/(nfreq*(nfreq**2-1)))*(2*dumxy.sum() - Ym.sum()*(nfreq+1))
+                    Ym = Ym - s*dumx
+                mean = Ym.sum()/len(Ym)
+                Ym = win*(Ym-mean)  # Remove DC offset, multiply by window
+
+                DFT = np.fft.fft(Ym)/nfreq  # Limit and normalize by vector length
+
+                fft_coeffs[k,0:lim-1] = DFT[0:lim-1]  # Get interested parties
+                dumft    = np.abs(fft_coeffs[k,:])    # Dummy for abs(coeffs)
+                err[k,m] = dumft.sum()/len(dumft)     # Mean of PSD slice
+                afft[k,:]  += dumft                   # Welch's PSD
+                spec[:,m,k] = fft_coeffs[k,:]         # Build spectrogram
+
+        print('\b\b\b^]\n')
+        
+        freq_vec = np.arange(nfreq)*samprate/nfreq;
+        freq_vec = freq_vec[0:lim]; 
+        afft /= M     
+        return spec,afft,freq_vec,time_vec,err,Ntoss
+
+def LoadBar(m,M):
+# ------------------
+# Help the user out!
+# ------------------
+    ch1 = ['|','|','!','-','/','|','|','|'] 
+    ch2 = ['_','.',':',"'",'^',"'",':','.']
+    buf = '\b\b\b\b\b\b\b%3.0f%%%s%s' % (100*m/M, ch1[m%8], ch2[m%8])
+    print(buf)
