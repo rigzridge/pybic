@@ -67,7 +67,7 @@ class BicAn:
     # Constructor
     # ------------------
         bic.Raw = raw
-        
+
 
 def PlotTest(t,sig):
 # ------------------
@@ -141,13 +141,13 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
     spec = np.zeros((lim,M,N))      # Spectrogram
     fft_coeffs = np.zeros((N,lim))  # Coeffs for slice
     afft = np.zeros((N,lim))        # Coeffs for slice
-    Ntoss = 0;                      # Number of removed slices
+    Ntoss = 0                       # Number of removed slices
     
     win = np.sin(np.pi*np.arange(nfreq)/(nfreq-1)) # Apply Hann window
     
     print(' Working...      ')
     for m in range(M):
-        LoadBar(m,M-1);
+        LoadBar(m,M-1)
 
         time_vec[m] = t0 + m*step/samprate
         for k in range(N):
@@ -177,8 +177,8 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
     print('\b\b\b^]\n')
     
-    freq_vec = np.arange(nfreq)*samprate/nfreq;
-    freq_vec = freq_vec[0:lim]; 
+    freq_vec = np.arange(nfreq)*samprate/nfreq
+    freq_vec = freq_vec[0:lim] 
     afft /= M     
     return spec,afft,freq_vec,time_vec,err,Ntoss
 
@@ -203,7 +203,7 @@ def ApplyCWT(sig,samprate,sigma):
 
     print(' Working...      ')
     for a in range(nyq):
-        LoadBar(a,nyq-1);
+        LoadBar(a,nyq-1)
         # Apply for each scale (read: frequency)
         CWT[a,:] = np.fft.ifft(fft_sig * Psi(a+1))
     print('\b\b\b^]\n')
@@ -221,7 +221,11 @@ def LoadBar(m,M):
     buf = '\b\b\b\b\b\b\b%3.0f%%%s%s' % (100*m/M, ch1[m%8], ch2[m%8])
     print(buf)
 
+
 def GetClick(event):
+# ------------------
+# Callback for clicks
+# ------------------
     try:
         global clickx, clicky
         clickx, clicky = event.xdata, event.ydata
