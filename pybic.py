@@ -1,5 +1,4 @@
 import numpy as np
-import scipy
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -112,17 +111,6 @@ def ImageTest(dats):
     return
 
 
-def LoadBar(m,M):
-# ------------------
-# Help the user out!
-# ------------------
-    ch1 = '||\-/|||'
-    ch2 = '_.:"^":.'
-    buf = '\b\b\b\b\b\b\b%3.0f%%%s%s' % (100*m/M, ch1[m%8], ch2[m%8])
-    print(buf)
-    return
-
-
 def GetClick(event):
 # ------------------
 # Callback for clicks
@@ -166,9 +154,9 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
     spec = np.zeros((lim,M,N),dtype=complex)      # Spectrogram
     fft_coeffs = np.zeros((N,lim),dtype=complex)  # Coeffs for slice
     afft = np.zeros((N,lim))        # Coeffs for slice
-    Ntoss = 0                      # Number of removed slices
+    Ntoss = 0                       # Number of removed slices
     
-    win = np.sin(np.pi*np.arange(nfreq)/(nfreq-1)) # Apply Hann window
+    win = HannWindow(nfreq)         # Apply Hann window
     
     print(' Working...      ')
     for m in range(M):
@@ -180,10 +168,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
             #Ym = sig[k,0:subint-1 + m*step] # Select subinterval     
             Ym = Ym[0:nfreq]            # Take only what is needed for res
             if detrend:                 # Remove linear least-squares fit
-                dumx = np.arange(1,nfreq+1) 
-                dumxy = dumx*Ym
-                s = (6/(nfreq*(nfreq**2-1)))*(2*dumxy.sum() - Ym.sum()*(nfreq+1))
-                Ym = Ym - s*dumx
+                Ym = ApplyDetrend(Ym)
             mean = Ym.sum()/len(Ym)
             Ym = win*(Ym-mean)  # Remove DC offset, multiply by window
 
@@ -241,13 +226,12 @@ def ApplyDetrend(y):
 # ------------------
 # Remove linear trend
 # ------------------
-    print(' Applying detrend...') 
-    nfreq = np.len(y)
-    dumx  = np.arange(1,nfreq+1) 
+    n = len(y)
+    dumx  = np.arange(1,n+1) 
     dumxy = dumx*y
-    s = (6/(nfreq*(nfreq**2-1)))*(2*dumxy.sum() - y.sum()*(nfreq+1))
+    s = (6/(n*(n**2-1)))*(2*dumxy.sum() - y.sum()*(n+1))
     y = y - s*dumx
-    print('done.\n')
+    return y
 
 
 def SpecToBispec(spec,v,lilguy):
@@ -271,14 +255,14 @@ def SpecToBispec(spec,v,lilguy):
             s  = spec[j+k,:,v[2]]
 
             Bi  = (p1)*p2*np.conj(s)
-            e12 = abs(p1*p2)^2
-            e3  = abs(s)^2
+            e12 = abs(p1*p2)**2
+            e3  = abs(s)**2
 
             Bjk = sum(Bi)                
             E12 = sum(e12)             
             E3  = sum(e3)                      
 
-            b2[j,k] = (abs(Bjk)^2)/(E12*E3+lilguy) 
+            b2[j,k] = (abs(Bjk)**2)/(E12*E3+lilguy) 
 
             B[j,k] = Bjk
         B = B/np.slices
@@ -308,14 +292,14 @@ def SpecToCrossBispec(spec,v,lilguy):
                 s  = (j+k>=0)*spec[abs(j+k),:,v[2]] + (j+k<0)*np.conj[spec[abs(j+k),:,v[2]]]
 
                 Bi  = p1*p2*np.conj(s)
-                e12 = abs(p1*p2)^2   
-                e3  = abs(s)^2  
+                e12 = abs(p1*p2)**2   
+                e3  = abs(s)**2  
 
                 Bjk = sum(Bi)                    
                 E12 = sum(e12)             
                 E3  = sum(e3)                     
 
-                b2[j+nfreq,k+nfreq] = (abs(Bjk)^2)/(E12*E3+lilguy)
+                b2[j+nfreq,k+nfreq] = (abs(Bjk)**2)/(E12*E3+lilguy)
 
                 B[j+nfreq,k+nfreq] = Bjk
     B = B/slices
@@ -342,14 +326,14 @@ def GetBispec(spec,v,lilguy,j,k,rando):
         s  = abs(s)* np.exp[2j*np.pi*(2*np.rand(np.size(s)) - 1)]
 
     Bi  = p1*p2*np.conj(s)
-    e12 = abs(p1*p2)^2
-    e3  = abs(s)^2
+    e12 = abs(p1*p2)**2
+    e3  = abs(s)**2
 
     B   = sum(Bi)                 
     E12 = sum(e12)            
     E3  = sum(e3)                      
 
-    w = (abs(B)^2)/(E12*E3+lilguy)
+    w = (abs(B)**2)/(E12*E3+lilguy)
     
     B = B/np.length(Bi)
     return w,B,Bi
@@ -359,7 +343,7 @@ def HannWindow(N):
 # ------------------
 # Hann window
 # ------------------
-    win = (np.sin(np.pi*range(N)/(N-1)))^2
+    win = (np.sin(np.pi*np.arange(N)/(N-1)))**2
     return win
 
 
@@ -403,3 +387,14 @@ def RunDemo():
     dT = t(N)-t(1)
     bic = BicAn(x,'sigma',dT*5,'spectype','stft','sizewarn','samprate',fS,'justspec','plottype','bicoh')
     return bic
+
+
+def LoadBar(m,M):
+# ------------------
+# Help the user out!
+# ------------------
+    ch1 = '||\-/|||'
+    ch2 = '_.:"^":.'
+    buf = '\b\b\b\b\b\b\b%3.0f%%%s%s' % (100*m/M, ch1[m%8], ch2[m%8])
+    print(buf)
+    return
