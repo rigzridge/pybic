@@ -1,5 +1,5 @@
 import numpy as np
-#import scipy
+import scipy
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -166,7 +166,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
     spec = np.zeros((lim,M,N),dtype=complex)      # Spectrogram
     fft_coeffs = np.zeros((N,lim),dtype=complex)  # Coeffs for slice
     afft = np.zeros((N,lim))        # Coeffs for slice
-    Ntoss = 0                       # Number of removed slices
+    Ntoss = 0                      # Number of removed slices
     
     win = np.sin(np.pi*np.arange(nfreq)/(nfreq-1)) # Apply Hann window
     
@@ -248,6 +248,7 @@ def ApplyDetrend(y):
     s = (6/(nfreq*(nfreq**2-1)))*(2*dumxy.sum() - y.sum()*(nfreq+1))
     y = y - s*dumx
     print('done.\n')
+
 
 def SpecToBispec(spec,v,lilguy):
 # ------------------
@@ -402,17 +403,3 @@ def RunDemo():
     dT = t(N)-t(1)
     bic = BicAn(x,'sigma',dT*5,'spectype','stft','sizewarn','samprate',fS,'justspec','plottype','bicoh')
     return bic
-
-
-def GetClick(event):
-# ------------------
-# Callback for clicks
-# ------------------
-    try:
-        global clickx, clicky
-        clickx, clicky = event.xdata, event.ydata
-        buf = 'x = %3.3f, y = %3.3f' % (clickx, clicky)
-        print(buf)
-    except TypeError:
-        print('You can''t click outside the axis!')
-    return
