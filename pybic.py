@@ -194,7 +194,7 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
             cax = divider.append_axes('right', size='5%', pad=0.05)
             fig.colorbar(im, cax=cax)
             plt.ylabel(strings[2], fontsize=fsize, fontweight=fweight)
-            plt.yticks(weight='bold')
+            plt.yticks(size=fsize, weight='bold')
     cid = fig.canvas.mpl_connect('button_press_event', GetClick)
 
 
@@ -390,9 +390,9 @@ def SpecToCrossBispec(spec,v,lilguy):
                 #p2 = (j>=0)*spec[abs(j),:,v[1]] + (j<0)*np.conj(spec[abs(j),:,v[1]])
                 #s  = (j+k>=0)*spec[abs(j+k),:,v[2]] + (j+k<0)*np.conj(spec[abs(j+k),:,v[2]])
 
-                p1 = np.real( spec[abs(k),:,v[0]] ) + np.sign(k)*np.imag( spec[abs(k),:,v[0]] )
-                p2 = np.real( spec[abs(j),:,v[1]] ) + np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
-                s  = np.real( spec[abs(j+k),:,v[2]] ) + np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
+                p1 = np.real( spec[abs(k),:,v[0]] ) + 1j*np.sign(k)*np.imag( spec[abs(k),:,v[0]] )
+                p2 = np.real( spec[abs(j),:,v[1]] ) + 1j*np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
+                s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
 
                 Bi  = p1*p2*np.conj(s)
                 e12 = abs(p1*p2)**2   
@@ -420,9 +420,9 @@ def GetBispec(spec,v,lilguy,j,k,rando):
     #p2 = spec[j,:,v[1]]
     #s  = spec[j+k,:,v[2]]
 
-    p1 = np.real( spec[abs(k),:,v[0]] ) + np.sign(k)*np.imag( spec[abs(k),:,v[0]] )
-    p2 = np.real( spec[abs(j),:,v[1]] ) + np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
-    s  = np.real( spec[abs(j+k),:,v[2]] ) + np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
+    p1 = np.real( spec[abs(k),:,v[0]] ) + 1j*np.sign(k)*np.imag( spec[abs(k),:,v[0]] )
+    p2 = np.real( spec[abs(j),:,v[1]] ) + 1j*np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
+    s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
 
     if rando:
         p1 = abs(p1)*np.exp[2j*np.pi*(2*np.rand(np.size(p1)) - 1)]
