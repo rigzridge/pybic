@@ -1,13 +1,13 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-#       ______     ______ _      
-#       | ___ \    | ___ (_)         Bicoherence Analysis Module for Python
-#       | |_/ /   _| |_/ /_  ___     --------------------------------------
-#       |  __/ | | | ___ \ |/ __|    
-#       | |  | |_| | |_/ / | (__               [ v0.9 ] - 2022
-#       \_|   \__, \____/|_|\___|
-#              __/ |                         G. Riggs | T. Matheny
-#             |___/   
+#      ______     ______ _      
+#      | ___ \    | ___ (_)          Bicoherence Analysis Module for Python
+#      | |_/ /   _| |_/ /_  ___      --------------------------------------
+#      |  __/ | | | ___ \ |/ __|     
+#      | |  | |_| | |_/ / | (__                [ v0.9 ] - 2022
+#      \_|   \__, \____/|_|\___| 
+#             __/ |                          G. Riggs | T. Matheny
+#            |___/   
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -                  
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # The Bispectrum
@@ -57,17 +57,24 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/06/2022 -> Tyler tackled the tedium of porting static methods over from
+# 7/09/2022 -> Hoping to finish input parsing. [...] Sweet! Constructor is 
+# all but finished, and "ParseInput" method is done.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/08/2022 -> Cleaned up a couple things, discovered the ternary operator
+# equivalent of the C magic "cond ? a : b" => "a if cond else b". Passed out
+# early so I kind of missed the night shift %^/
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/07/2022 -> Tyler tackled the tedium of porting static methods over from
 # the Matlab version. Bit of debugging, but things are all but error-free.
 # Fiddling with plot methods, font sizes, colorbar locations, etc. 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/5/2022 --> Fixed some issues with STFT method; first "tests" attempted.
+# 7/05/2022 --> Fixed some issues with STFT method; first "tests" attempted.
 # Added GetClick method to obtain mouse coordinates on click ~> should be
 # incredibly helpful down the road when we're trying to get the GUI up.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/4/2022 --> Copy pasta'd some code from MATLAB class
+# 7/04/2022 --> Copy pasta'd some code from MATLAB class
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/1/2022 --> First "code." 
+# 7/01/2022 --> First "code." 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # Import dependencies
@@ -75,6 +82,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
+import warnings
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import os
+
 
 # Define classes for bispec script
 
@@ -85,9 +97,9 @@ class BicAn:
     FontSize  = 20
     WarnSize  = 1000
     Date      = datetime.now()
-    MaxRes    = []
-    Samples   = []
-    NFreq     = []
+    MaxRes    = 0
+    Samples   = 0
+    NFreq     = 0
     RunBicAn  = False
     NormToNyq = False
     Nseries   = 1
@@ -140,11 +152,154 @@ class BicAn:
     sb = [] # Std dev of b^2
 
     # Methods
-    def __init__(bic,raw):
+    def __init__(self,inData,**kwargs):
     # ------------------
     # Constructor
     # ------------------
-        bic.Raw = raw
+        if len(kwargs)==0:
+
+            ### THIS IS SOOOOOO WRONG STILL!
+
+            if isinstance(inData,type(BicAn)):
+                # If object, output or go to GUI
+                print('Input is BicAn!')
+                self = inData
+                self.RunBicAn = False
+            elif isinstance(inData,list):
+                # If array input, use normalized frequencies
+                self.Raw       = inData
+                self.SampRate  = 1 
+                self.FreqRes   = 1/self.SubInt    
+                self.NormToNyq = true
+            elif isinstance(inData,str):
+                print('string!')
+                # match inData:
+                #     case 'input':
+                #         root = tk.Tk()
+                #         # Build a list of tuples for each file type the file dialog should display
+                #         my_filetypes = [('all files', '.*'), ('text files', '.txt'), ('dat files', '.dat')]
+                #         # Ask the user to select a single file name
+                #         answer = filedialog.askopenfilename(parent=root,initialdir=os.getcwd(),title="Please select a file:",filetypes=my_filetypes)  
+                #         return 
+                #     case 'demo':
+                #         answer = messagebox.askokcancel("Question","Run the demo?")
+                #         return 
+                #     case _:
+                #         return    # 0 is the default case if x is not found
+
+            else:
+                print('***WARNING*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
+        else:
+            self.Raw = inData
+            self.ParseInput(kwargs)
+            if self.RunBicAn:
+                print('You did it!')
+
+                self.Processed = self.Raw
+                #self.SpectroSTFT()
+                #bic = bic.ProcessData
+        return
+
+
+    # Dependent properties
+    @property
+    def MaxRes(self):      # Maximum resolution
+        return self.SampRate / self.SubInt;
+
+    @property
+    def NFreq(self):       # Number of Fourier bins
+        return int(self.SampRate / self.FreqRes)
+
+    @property
+    def Samples(self):     # Samples in data
+        val = len(self.Raw) if len(self.Processed)==0 else len(self.Processed)
+        return val
+
+    # Set functions
+    # @Raw.setter
+    # def Raw(self, Raw):
+    #      self.__Raw = Raw
+    #      return
+
+    def ParseInput(self,kwargs):
+    # ------------------
+    # Handle inputs
+    # ------------------
+        self.RunBicAn = True
+    
+        print('Checking inputs...') 
+
+        for key, val in kwargs.items(): 
+
+            # There are 2 ways to do this...
+            # The first approach is somewhat simpler, but precludes case insensitivity =^\ 
+
+            # try:                               # Throws error if input isn't a valid attribute
+            #     dum = getattr(self, key)       # Get attribute
+            #     if isinstance(val,type(dum)):  # Check type 
+            #         setattr(self, key, val)    # Set!
+            #     else: 
+            #         print('***WARNING*** :: {} must be a {}! Using default value = {}'.format(key,type(dum),dum))
+            # except AttributeError:
+            #     print('***WARNING*** :: BicAn has no {} attribute!'.format(key))
+
+            # This is how it's coded in the Matlab version, and doesn't care about cases! (Slower...)
+
+            dum = dir(BicAn)                                        # Get class info as list of strings
+            attr = [x.lower() for x in dum if x[0] != "_"]          # Keep only attributes, make lowercase
+            if key.lower() in attr:                                 # Make input lowercase
+                for k in range(len(attr)):                          # Loop through all attributes (slow part!)
+                    if key.lower() == attr[k]:                      # If input is an attribute:
+                        dumval = eval( 'self.{}'.format(dum[k]) )   # Get default value for type comparison
+                        if isinstance(val, type(dumval)):           # Check type
+                            setattr(self, dum[k], val)              # Set attribute
+                        else: 
+                            print('***WARNING*** :: {} must be a {}! Using default value = {}'.format(dum[k],type(dumval),dumval))        
+            else:
+                print('***WARNING*** :: BicAn has no {} attribute!'.format(key))
+
+        # These input checks must be done in this order!
+        self.SubInt = int(abs(self.SubInt))            # Remove sign and decimals
+        if self.SubInt==0 or self.SubInt>self.Samples: # Check subinterval <= total samples
+            self.SubInt = min(512,self.Samples)        # Choose 512 as long as data isn't too short
+            print('***WARNING*** :: Subinterval too large for time-series... Using {}.'.format(self.SubInt))
+
+        self.FreqRes = int(abs(self.FreqRes))          # Remove sign and decimals
+        if self.FreqRes==0:                            # Check max res option
+           self.FreqRes = self.MaxRes                  # Maximum resolution  
+        elif self.FreqRes<self.MaxRes or self.FreqRes>self.SampRate/2:
+            print('***WARNING*** :: Requested resolution not possible, using maximum ({} Hz).'.format(self.MaxRes))
+            self.FreqRes = self.MaxRes
+
+        if self.NFreq>self.SubInt:                     # Check if Fourier bins exceed subinterval
+            print('***WARNING*** :: Subinterval too small for requested resolution... Using required.')
+            self.FreqRes = self.MaxRes                 # Really hate repeating code, but...   
+
+        self.Step = int(abs(self.Step))                # Remove sign and decimals
+        if self.Step==0 or self.Step>self.SubInt:      # Check step <= subinterval
+            self.Step = self.SubInt//4;                # This seems fine?
+            print('***WARNING*** :: Step must be nonzero and less than subint... Using {}.'.format(self.Step))     
+
+        print('done.')
+        return
+
+
+    def SpectroSTFT(self):
+    # ------------------
+    # STFT method
+    # ------------------    
+        spec,afft,f,t,err,Ntoss = ApplySTFT(self.Processed,self.SampRate,self.SubInt,self.Step,self.NFreq,self.TZero,self.Detrend,self.ErrLim)
+        
+        self.tv = t
+        self.fv = f
+
+        # for k in range(self.Nseries):
+        #     self.ft[k,:] = mean(abs(spec(:,:,k)'))
+        self.ft = afft
+
+        self.sg = spec
+        self.er = err     
+        return  
 
 
     def PlotSpectro(self):
@@ -153,10 +308,7 @@ class BicAn:
     # ------------------
         tstr = 'Time [%ss]' % (ScaleToString(self.TScale))
         fstr = '$f$ [%sHz]' % (ScaleToString(self.FScale))
-        if self.SpecType=='stft':
-            dum = 'P'
-        else:
-            dum = 'W'
+        dum  = 'P' if self.SpecType=='stft' else 'W'
         cbarstr = '$\log_{10}|\mathcal{%s}(t,f)|^2$' % (dum)
 
         fig, ax = plt.subplots()
@@ -167,8 +319,8 @@ class BicAn:
         plt.show()
         return
 
-# Static methods
 
+# Static methods
 def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
 # ------------------
 # Convenience function
@@ -238,6 +390,8 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
 # ------------------        
     t = np.arange(0,tend,1/fS)  # Time-vector sampled at "fS" Hz
 
+    x = 0*t
+
     # Make 3 sinusoidal signals...
     dfx = Afx*np.sin(2*np.pi*t*Ff)  
     dfy = Afy*np.cos(2*np.pi*t*Ff)
@@ -254,7 +408,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 # STFT static method
 # ------------------
     N = 1
-    M = 1 + (len(sig) - subint)//step 
+    M = 1 + (len(sig) - subint)//step
     lim  = nfreq//2                 # lim = |_ Nyquist/res _|
     time_vec = np.zeros(M)          # Time vector
     err  = np.zeros((N,M))          # Mean information
@@ -363,7 +517,7 @@ def SpecToBispec(spec,v,lilguy):
 
             B[j,k] = Bjk
     B = B/slices
-    print ('\b\b^]\n')    
+    print ('\b\b\b^]\n')    
     return b2,B              
 
 
@@ -390,8 +544,8 @@ def SpecToCrossBispec(spec,v,lilguy):
                 #p2 = (j>=0)*spec[abs(j),:,v[1]] + (j<0)*np.conj(spec[abs(j),:,v[1]])
                 #s  = (j+k>=0)*spec[abs(j+k),:,v[2]] + (j+k<0)*np.conj(spec[abs(j+k),:,v[2]])
 
-                p1 = np.real( spec[abs(k),:,v[0]] ) + 1j*np.sign(k)*np.imag( spec[abs(k),:,v[0]] )
-                p2 = np.real( spec[abs(j),:,v[1]] ) + 1j*np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
+                p1 = np.real( spec[abs(k),:,v[0]] )   + 1j*np.sign(k)*np.imag( spec[abs(k),:,v[0]] )
+                p2 = np.real( spec[abs(j),:,v[1]] )   + 1j*np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
                 s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
 
                 Bi  = p1*p2*np.conj(s)
@@ -407,7 +561,7 @@ def SpecToCrossBispec(spec,v,lilguy):
                 B[j+nfreq-1,k+nfreq-1] = Bjk
 
     B = B/slices
-    print('\b\b^]\n')                    
+    print('\b\b\b^]\n')                    
     return b2,B
 
 
@@ -500,22 +654,10 @@ def RunDemo():
 # ------------------
 # Demonstration
 # ------------------
-    b = BicAn
     x, t, fS = SignalGen(200,100,1,22,5,1,45,15,1,1/20,0.5)
-    spec, afft, freq_vec, time_vec, err, Ntoss = ApplySTFT(x,fS,512,128,512,0,True,1e15)
-    b2, B = SpecToBispec(spec,[0,0,0],1e-6)
+    
+    b = BicAn(x,SampRate=fS)
+    b.SpectroSTFT()
+    b.PlotSpectro()
 
-    b.Processed = x
-    b.SampRate  = fS
-    b.sg = spec
-    b.ft = afft
-    b.fv = freq_vec
-    b.tv = time_vec
-    b.er = err
-    b.bc = b2
-    b.bs = B
-    b.TScale = 3
-    b.FScale = -1
-
-    b.PlotSpectro(b)
     return b
