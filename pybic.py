@@ -86,6 +86,7 @@ import warnings
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
+from math import isclose
 
 
 # Define classes for bispec script
@@ -170,7 +171,7 @@ class BicAn:
                 self.Raw       = inData
                 self.SampRate  = 1 
                 self.FreqRes   = 1/self.SubInt    
-                self.NormToNyq = true
+                self.NormToNyq = True
             elif isinstance(inData,str):
                 print('string!')
                 # match inData:
@@ -661,3 +662,65 @@ def RunDemo():
     b.PlotSpectro()
 
     return b
+
+
+
+
+def CalcMean(bic,Ntrials):
+# ------------------
+# Calculate mean of b^2
+# ------------------
+    [n,m,r] = np.size(bic.sg)
+    v = [1,1,1]
+    A = abs(bic.sg)
+            
+    if bic.nargin==0:
+        Ntrials = 100
+    bic.mb = np.zeros(np.floor(n/2),n)
+
+    bic.sb = bic.mb
+    for k in range(Ntrials):
+
+        P = np.exp(2j*np.pi*(2*np.rand(n,m,r) - 1))
+
+        dum = bic.SpecToBispec(A*P,v,bic.LilGuy)
+        old_est = bic.mb/(k - 1 + np.eps)
+                
+        bic.mb = bic.mb + dum
+        # "Online" algorithm for variance 
+        bic.sb = bic.sb + (dum - old_est)*(dum - bic.mb/k)
+    
+
+    bic.mb = bic.mb/Ntrials
+    bic.sb = bic.sb/(Ntrials-1)
+
+def PlotConfidence(bic):
+    # ------------------
+    # Plot confidence interval
+    # ------------------
+    old_plot = bic.PlotType
+    old_dats = bic.bc
+    bic.PlotType = 'bicoh'
+    noise_floor  = -bic.mb*np.log(1-0.999)
+    bic.bc       = bic.bc * (bic.bc>noise_floor)
+    #############
+    bic.bc = noise_floor
+    bic.PlotBispec
+    bic.bc       = old_dats
+    bic.PlotType = old_plot
+        
+
+def ApplyZPad(bic):
+# ------------------
+# Zero-padding
+# ------------------
+    if bic.ZPad:
+        tail_error = np.mod(bic.Samples,bic.SubInt)
+        if tail_error != 0:
+            # Add enough zeros to make subint evenly divide samples
+            bic.Processed = [bic.Raw(np.zeros(bic.Nseries, bic.SubInt-tail_error))]
+        bic.Processed = bic.Raw
+    else:
+        # Truncate time series to fit integer number of stepped subintervals
+        samplim = bic.Step*np.floor((bic.Samples - bic.SubInt)/bic.Step) + bic.SubInt
+        bic.Processed = bic.Raw[:,1:samplim]
