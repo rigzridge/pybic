@@ -5,9 +5,9 @@
 #      | |_/ /   _| |_/ /_  ___      --------------------------------------
 #      |  __/ | | | ___ \ |/ __|     
 #      | |  | |_| | |_/ / | (__                [ v0.9 ] - 2022
-#      \_|   \__, \____/|_|\___| 
+#      \_|   \__, \____/|_|\___|             
 #             __/ |                          G. Riggs | T. Matheny
-#            |___/   
+#            |___/                       
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -                  
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # The Bispectrum
@@ -40,7 +40,7 @@
 # fscale    -> scale for plotting frequencies [default :: 0]
 # justspec  -> true for just spectrogram [default :: false]
 # lilguy    -> set epsilon [default :: 1e-6]
-# note      -> optional string for documentation [default :: {DATE & TIME}] 
+# note      -> optional string for documentation [default :: ' '] 
 # plotit    -> start plotting tool when done [default :: false]
 # plottype  -> set desired plottable [default :: 'bicoh']
 # samprate  -> sampling rate in Hz [default :: 1]
@@ -56,6 +56,18 @@
 # zpad      -> add zero-padding to end of time-series [default :: true]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/11/2022 -> Adjusted things in ParseInput() method to not confuse Python
+# with "self = BicAn" calls inside loop. This all started when I noticed
+# bugs with bic.BicAn('demo') stuff... if self.RunBicAn was set to False 
+# _before_ the "self =" assignment, the ProcessData() loop wouldn't start,
+# but setting it False after the assignment left the RunBicAn property True
+# for the original object. My idea: Assigning self to a function's output
+# just instantiated _another_ object, instead of copying over the input. 
+# Kind of fun to think about, but pernicious as all hell. Rewrote it to 
+# avoid such nonsense -> demo inputs now set data & ParseInput() again.
+# Changed pcolor to pcolormesh (documentation says it's faster!), figured 
+# out how to overplot lines and such... No "hold on/off" nonsense needed.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/10/2022 -> Tyler knocked out a few more methods, input options changed
 # slightly to allow string ('input', 'demo', etc.) as only input, cleaned 
@@ -85,18 +97,16 @@
 # THINGS TO DO!
 # ** Configure warnings
 # ** Figure out setter functions
-# ** Why doesn't "RunDemo" output proper object?
+# *_ Why doesn't "RunDemo" output proper object?
 # *_ Clean up constructor
 # ** Tackle input type/dimension dilemma [len() tests lists, not np arrays; arrays are not uniform!]
+# ** Implement some kind of check for Raw data! Should eliminate string, etc.
 
 # Methods left:
 #{
 # (1) Required
-# SpectroWavelet
-# Bicoherence
 # PlotPowerSpect
 # WhichPlot
-# PlotBispec
 # ProcessData
 
 # (2) Extra but nice
@@ -104,13 +114,13 @@
 # Coherence
 # PlotPointOut
 
-# (3) More to learn about Python
+# (3) More to learn about Python...
 # SwitchPlot
 # PlotGUI
 # RefreshGUI
 # MakeMovie
+# etc.
 #}
-
 
 # Import dependencies
 import numpy as np
@@ -122,6 +132,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 from math import isclose
+import time
 
 
 # Define classes for bispec script
@@ -192,15 +203,11 @@ class BicAn:
     def __init__(self,inData,**kwargs):
     # ------------------
     # Constructor
-    # ------------------
-        
+    # ------------------ 
         self.ParseInput(inData,kwargs)
+
         if self.RunBicAn:
-
             self.ProcessData()
-
-            ##################
-            print('You did it!')
 
         return
 
@@ -235,40 +242,49 @@ class BicAn:
         if len(kwargs)==0:
             if isinstance(inData,type(BicAn)):
                 # If object, output or go to GUI
-                print('Input is BicAn!')
-                self = inData
+                # HAS BUGS!
+                print('Input is BicAn! ')
+                #self = inData 
                 self.RunBicAn = False
+
             elif isinstance(inData,list):
                 # If array input, use normalized frequencies
                 self.Raw       = inData
                 self.SampRate  = 1 
                 self.FreqRes   = 1/self.SubInt    
                 self.NormToNyq = True
+
             elif isinstance(inData,str):
-
+                # Check string inputs
                 self.RunBicAn = False
-
                 dum = inData.lower()
-                siglist = ['classic', 'tone', 'noisy', '2tone', '3tone', 'line', 'circle', 'cross_2tone', 'cross_3tone', 'cross_circle']
+
+                #### Should this be global?
+                siglist = ['classic','tone','noisy','2tone','3tone','line','circle','cross_2tone','cross_3tone','cross_circle']
                 if dum == 'input':
+                    # Start getfile prompt
                     ans = FileDialog()
-                elif dum == 'demo':
-                    ans = 'Running demo!'
-                    if messagebox.askokcancel("Question","Run the demo?"):
-                        self = RunDemo()
-                    #return
-                elif dum in siglist:
+
+                    # {PARSE FILE...}
+
+                elif dum in siglist or dum == 'demo':
+                    # If explicit test signal (or demo), confirm with user, then recursively call ParseInputs
                     ans = 'Test signal!'
+                    dum = 'tone' if dum == 'demo' else dum
+                    if messagebox.askokcancel('Question','Run the "{}" demo?'.format(dum)):
+                        sig,_,fS = TestSignal(dum)
+                        self.ParseInput(sig,{'SampRate':fS})  
                 else:
-                    ans = 'other'
+                    ans = 'Hmmm. That string isn`t supported yet... Try ''demo'''
                 print(ans)
+
             else:
                 print('***WARNING*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
         else:
             
             self.Raw = inData
 
-            for key, val in kwargs.items(): 
+            for key, val in kwargs.items():          # Loop through all keyword : value pairs
 
                 # There are 2 ways to do this...
                 # The first approach is somewhat simpler, but precludes case insensitivity =^\ 
@@ -325,9 +341,31 @@ class BicAn:
     # ------------------
     # Main processing loop
     # ------------------
+
+        # {SOMETHING TO MAKE .PROCESSED ARRAY...?}
+
+        start = time.time()
+
         self.ApplyZPad()
-        self.SpectroSTFT()
+        dum = self.SpecType.lower()
+        if dum in ['fft', 'stft', 'fourier']:
+            self.SpectroSTFT()
+            self.SpecType = 'stft'
+        elif dum in ['wave', 'wavelet', 'cwt']:
+            self.SpectroWavelet()
+            self.SpecType = 'wave'    
+
+        if not self.JustSpec:
+            self.Bicoherence()
+
+        ##################
+        end = time.time()
+
+        buf = 'Processing complete! Execution required %3.3f s.' % (end-start)
+        print(buf)
+
         self.PlotSpectro()
+        self.PlotBispec()
 
 
     def SpectroSTFT(self):
@@ -347,6 +385,53 @@ class BicAn:
         self.er = err     
         return  
 
+    def SpectroWavelet(self):
+    # ------------------
+    # Wavelet method
+    # ------------------
+        if self.Detrend:
+            self.Processed = ApplyDetrend(self.Processed)
+        self.Processed = self.Processed - sum(self.Processed)/len(self.Processed)
+        
+        # Still need warn prompts
+        # if length(self.Processed)>self.WarnSize and self.SizeWarn:
+        #     self.SizeWarnPrompt(length(self.Processed))
+
+        nyq = self.Samples//2
+        CWT = np.zeros((nyq,nyq,self.Nseries),dtype=complex)
+
+        for k in range(self.Nseries):
+            CWT[:,:,k],f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma)
+
+        self.tv = t
+        self.fv = f
+        #self.ft =     
+        self.sg = CWT
+
+
+    def Bicoherence(self):
+    # ------------------
+    # Calculate bicoherence
+    # ------------------       
+        dum = self.sg 
+        if self.SpecType == 'wave':
+            WTrim = 50*2
+            dum = self.sg[:,WTrim:end-WTrim,:] 
+        if self.Nseries==1:
+            v = [0, 0, 0]
+            b2,B = SpecToBispec(dum,v,self.LilGuy)
+        else:
+            if self.Nseries==2:
+                v = [0, 1, 1]
+            else:
+                v = [0, 1, 2]
+            b2,B = SpecToCrossBispec(dum,v,self.LilGuy)
+            self.ff = np.concatenate((-self.fv[::-1], self.fv[1::]))
+
+        self.bs = B
+        self.bc = b2
+        return
+
 
     def PlotSpectro(self):
     # ------------------
@@ -359,11 +444,59 @@ class BicAn:
 
         fig, ax = plt.subplots()
         for k in range(self.Nseries):
-            im = ax.pcolor(self.tv/10**self.TScale,self.fv/10**self.FScale,2*np.log10(abs(self.sg[:,:,k])), cmap=self.CMap, shading='auto')
+            im = ax.pcolormesh(self.tv/10**self.TScale,self.fv/10**self.FScale,2*np.log10(abs(self.sg[:,:,k])), cmap=self.CMap, shading='auto')
             PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im)
 
         plt.show()
         return
+
+
+    def PlotBispec(self):
+    # ------------------
+    # Plot bispectrum
+    # ------------------
+        fig, ax = plt.subplots()
+
+        dum, cbarstr = self.WhichPlot()
+
+        if self.Nseries==1:
+            f = self.fv/10**self.FScale
+            im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
+
+            # Draw triangle
+            plt.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.6,0.6,0.6], linewidth=3)
+            plt.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.6,0.6,0.6], linewidth=3)
+
+        else:
+            f = self.ff/10**self.FScale
+            im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
+        
+        fstr1 = '$f_1$ [%sHz]' % (ScaleToString(self.FScale))
+        fstr2 = '$f_2$ [%sHz]' % (ScaleToString(self.FScale))
+        PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im)
+
+        plt.show()
+        return      
+
+
+    def WhichPlot(self):
+    # ------------------
+    # Helper method for plots
+    # ------------------
+        guy = self.PlotType
+        if guy == 'bicoh':
+            dum = self.bc
+            cbarstr = r'$b^2(f_1,f_2)$'
+        elif guy in ['abs','real','imag','angle']:
+            dum = eval('np.{}(self.bs)'.format(guy))
+            cbarstr = r'%s%s $\mathcal{B}(f_1,f_2)$' % (guy[0].upper(),guy[1:].lower())
+        elif guy == 'mean':
+            dum = self.mb
+            cbarstr = r'$\langle b^2(f_1,f_2)\rangle$'
+        elif guy == 'std':
+            dum = self.sb
+            cbarstr = r'$\sigma_{b^2}(f_1,f_2)$'
+        return dum,cbarstr
 
 
     def CalcMean(self,Ntrials):
@@ -377,18 +510,17 @@ class BicAn:
 
         v = [0,0,0]
         A = abs(self.sg)
-
         eps = 1e-16
                 
         self.mb = np.zeros((n//2,n))
-
         self.sb = self.mb
+
         for k in range(Ntrials):
 
             P = np.exp( 2j*np.pi * (2*np.random.random((n,m,r)) - 1) )
 
             dumspec,_ = SpecToBispec(A*P,v,self.LilGuy)
-            old_est = self.mb/(k + eps)
+            old_est   = self.mb/(k + eps) # "eps" is just a convenience for first loop, since mb = 0 initially       
                     
             self.mb += dumspec
             # "Online" algorithm for variance 
@@ -443,7 +575,6 @@ class BicAn:
             self.Processed = self.Raw[0:samplim]
 
 
-
 def FileDialog():
 # ------------------
 # Ganked from StackExchange...
@@ -457,6 +588,7 @@ def FileDialog():
 
 
 # Module methods
+
 def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
 # ------------------
 # Convenience function
@@ -509,7 +641,7 @@ def ImageTest(t,f,dats):
     fig, ax = plt.subplots()
 
     #im = ax.imshow(dats, cmap='plasma')
-    im = ax.pcolor(t,f,dats, cmap='plasma', shading='auto')
+    im = ax.pcolormesh(t,f,dats, cmap='plasma', shading='auto')
     
     fsize = 14
     fweight = 'normal'
@@ -557,6 +689,7 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
     return sig,t,fS
 
+
 def TestSignal(whatsig):
 # ------------------
 # Provides FM test signal
@@ -579,6 +712,8 @@ def TestSignal(whatsig):
         inData,t,_ = SignalGen(fS,tend,1,22,0,1,45,10,1,1/20,noisy)
     elif dum == 'circle':
         inData,t,_ = SignalGen(fS,tend,1,22,10,1,45,10,1,1/20,noisy)
+    elif dum == 'fast_circle':
+        inData,t,_ = SignalGen(fS,tend,1,22,5,1,45,5,1,5/20,noisy)
     elif dum == 'cross_2tone':
         x,t,_ = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
         y,_,_ = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
@@ -620,7 +755,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
     
     win = HannWindow(nfreq)         # Apply Hann window
     
-    print(' Working...      ')
+    print('Applying STFT...      ')
     for m in range(M):
         LoadBar(m,M)
 
@@ -673,7 +808,7 @@ def ApplyCWT(sig,samprate,sigma):
     # Morlet wavelet in frequency space
     Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
 
-    print(' Working...      ')
+    print('Applying CWT...      ')
     for a in range(nyq):
         LoadBar(a,nyq)
         # Apply for each scale (read: frequency)
@@ -832,7 +967,8 @@ def LoadBar(m,M):
 # ------------------
     ch1 = '||\-/|||'
     ch2 = '_.:"^":.'
-    buf = '\b\b\b\b\b\b\b%3.0f%%%s%s' % (100*m/(M-1), ch1[m%8], ch2[m%8])
+    buf = '\b\b\b\b\b\b\b%3.0f%%%s%s' % (100*(m+1)/M, ch1[m%8], ch2[m%8])
+    # Changed m/(M-1) to (m+1)/M to avoid /0 errors 
     print(buf)
     return
 
@@ -855,11 +991,6 @@ def RunDemo():
 # ------------------
 # Demonstration
 # ------------------
-    #x, t, fS = SignalGen(200,100,1,22,5,1,45,15,1,1/20,0.5)
-    x,t,fS = TestSignal('circle')
-    
-    b = BicAn(x,SampRate=fS)
-    #b.SpectroSTFT()
-    #b.PlotSpectro()
+    b = BicAn('circle')
 
     return b
