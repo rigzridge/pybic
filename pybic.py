@@ -198,7 +198,6 @@ class BicAn:
     mb = [] # Mean b^2
     sb = [] # Std dev of b^2
 
-
     # Methods
     def __init__(self,inData,**kwargs):
     # ------------------
@@ -208,21 +207,21 @@ class BicAn:
 
         if self.RunBicAn:
             self.ProcessData()
-
+            
         return
 
 
     # Dependent properties
     @property
-    def MaxRes(self):  # Maximum resolution
-        return self.SampRate / self.SubInt
+    def MaxRes(self):      # Maximum resolution
+        return self.SampRate / self.SubInt;
 
     @property
-    def NFreq(self):   # Number of Fourier bins
+    def NFreq(self):       # Number of Fourier bins
         return int(self.SampRate / self.FreqRes)
 
     @property
-    def Samples(self): # Samples in data
+    def Samples(self):     # Samples in data
         val = len(self.Raw) if len(self.Processed)==0 else len(self.Processed)
         return val
 
@@ -232,11 +231,12 @@ class BicAn:
     #      self.__Raw = Raw
     #      return
 
-    def ParseInput(self,inData,kwargs):
+    def ParseInput(self,kwargs):
     # ------------------
     # Handle inputs
     # ------------------
-        self.RunBicAn = True  
+        self.RunBicAn = True
+    
         print('Checking inputs...') 
 
         if len(kwargs)==0:
@@ -673,7 +673,7 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
 # OUTPUTS:
 # sig   --> Signal 
 # t     --> Time vector
-# . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .        
+# . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .               
     t = np.arange(0,tend,1/fS)  # Time-vector sampled at "fS" Hz
 
     # Will have to FIX THIS later...
@@ -915,9 +915,9 @@ def GetBispec(spec,v,lilguy,j,k,rando):
     s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
 
     if rando:
-        p1 = abs(p1)*np.exp[ 2j*np.pi* (2*np.random.random(np.size(p1)) - 1) ]
-        p2 = abs(p2)*np.exp[ 2j*np.pi* (2*np.random.random(np.size(p2)) - 1) ]
-        s  = abs(s)* np.exp[ 2j*np.pi* (2*np.random.random(np.size(s)) - 1) ]
+        p1 = abs(p1)*np.exp[2j*np.pi*(2*np.rand(np.size(p1)) - 1)]
+        p2 = abs(p2)*np.exp[2j*np.pi*(2*np.rand(np.size(p2)) - 1)]
+        s  = abs(s)* np.exp[2j*np.pi*(2*np.rand(np.size(s)) - 1)]
 
     Bi  = p1*p2*np.conj(s)
     e12 = abs(p1*p2)**2
