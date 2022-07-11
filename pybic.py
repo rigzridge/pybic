@@ -57,6 +57,9 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/12/2022 -> Merged main branch with a patch from Tyler; between the both
+# of us, we're just about done with the necessary stuff! Slight debugging.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/11/2022 -> Adjusted things in ParseInput() method to not confuse Python
 # with "self = BicAn" calls inside loop. This all started when I noticed
 # bugs with bic.BicAn('demo') stuff... if self.RunBicAn was set to False 
@@ -106,8 +109,7 @@
 #{
 # (1) Required
 # PlotPowerSpect
-# WhichPlot
-# ProcessData
+# ...ProcessData
 
 # (2) Extra but nice
 # SpecToCoherence
@@ -142,7 +144,7 @@ class BicAn:
     
     # Properties
     FontSize  = 20
-    WarnSize  = 1000
+    WarnSize  = 1024
     Date      = datetime.now()
     MaxRes    = 0
     Samples   = 0
@@ -198,6 +200,7 @@ class BicAn:
     mb = [] # Mean b^2
     sb = [] # Std dev of b^2
 
+
     # Methods
     def __init__(self,inData,**kwargs):
     # ------------------
@@ -207,21 +210,21 @@ class BicAn:
 
         if self.RunBicAn:
             self.ProcessData()
-            
+
         return
 
 
     # Dependent properties
     @property
-    def MaxRes(self):      # Maximum resolution
-        return self.SampRate / self.SubInt;
+    def MaxRes(self):  # Maximum resolution
+        return self.SampRate / self.SubInt
 
     @property
-    def NFreq(self):       # Number of Fourier bins
+    def NFreq(self):   # Number of Fourier bins
         return int(self.SampRate / self.FreqRes)
 
     @property
-    def Samples(self):     # Samples in data
+    def Samples(self): # Samples in data
         val = len(self.Raw) if len(self.Processed)==0 else len(self.Processed)
         return val
 
@@ -231,12 +234,11 @@ class BicAn:
     #      self.__Raw = Raw
     #      return
 
-    def ParseInput(self,kwargs):
+    def ParseInput(self,inData,kwargs):
     # ------------------
     # Handle inputs
     # ------------------
-        self.RunBicAn = True
-    
+        self.RunBicAn = True  
         print('Checking inputs...') 
 
         if len(kwargs)==0:
@@ -371,7 +373,10 @@ class BicAn:
     def SpectroSTFT(self):
     # ------------------
     # STFT method
-    # ------------------    
+    # ------------------ 
+        if self.NFreq>self.WarnSize and self.SizeWarn:
+            self.SizeWarnPrompt(self.NFreq)
+
         spec,afft,f,t,err,Ntoss = ApplySTFT(self.Processed,self.SampRate,self.SubInt,self.Step,self.NFreq,self.TZero,self.Detrend,self.ErrLim)
         
         self.tv = t
@@ -385,17 +390,19 @@ class BicAn:
         self.er = err     
         return  
 
+
     def SpectroWavelet(self):
     # ------------------
     # Wavelet method
     # ------------------
         if self.Detrend:
             self.Processed = ApplyDetrend(self.Processed)
+        # Subtract mean
         self.Processed = self.Processed - sum(self.Processed)/len(self.Processed)
         
-        # Still need warn prompts
-        # if length(self.Processed)>self.WarnSize and self.SizeWarn:
-        #     self.SizeWarnPrompt(length(self.Processed))
+        # Warn prompt
+        if self.Samples>self.WarnSize and self.SizeWarn:
+            self.SizeWarnPrompt(self.Samples)
 
         nyq = self.Samples//2
         CWT = np.zeros((nyq,nyq,self.Nseries),dtype=complex)
@@ -407,6 +414,7 @@ class BicAn:
         self.fv = f
         #self.ft =     
         self.sg = CWT
+        return
 
 
     def Bicoherence(self):
@@ -464,8 +472,8 @@ class BicAn:
             im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
 
             # Draw triangle
-            plt.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.6,0.6,0.6], linewidth=3)
-            plt.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.6,0.6,0.6], linewidth=3)
+            plt.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.5,0.5,0.5], linewidth=2.5)
+            plt.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.5,0.5,0.5], linewidth=2.5)
 
         else:
             f = self.ff/10**self.FScale
@@ -575,6 +583,19 @@ class BicAn:
             self.Processed = self.Raw[0:samplim]
 
 
+    def SizeWarnPrompt(self,n):
+    # ------------------
+    # Prompt for CPU health
+    # ------------------
+        qwer = messagebox.askokcancel('Question','FFT elements exceed {}! ({}) Continue?'.format(self.WarnSize,n))
+        if not qwer:
+            print('Operation terminated by user.')
+            self.RunBicAn = False
+        return         # Bail if that seems scary! 
+
+
+# Module methods
+
 def FileDialog():
 # ------------------
 # Ganked from StackExchange...
@@ -585,9 +606,6 @@ def FileDialog():
     # Ask the user to select a single file name
     ans = filedialog.askopenfilename(parent=root,initialdir=os.getcwd(),title="Please select a file:",filetypes=my_ftypes)  
     return ans
-
-
-# Module methods
 
 def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
 # ------------------
@@ -673,7 +691,7 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
 # OUTPUTS:
 # sig   --> Signal 
 # t     --> Time vector
-# . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .               
+# . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .        
     t = np.arange(0,tend,1/fS)  # Time-vector sampled at "fS" Hz
 
     # Will have to FIX THIS later...
@@ -915,9 +933,9 @@ def GetBispec(spec,v,lilguy,j,k,rando):
     s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
 
     if rando:
-        p1 = abs(p1)*np.exp[2j*np.pi*(2*np.rand(np.size(p1)) - 1)]
-        p2 = abs(p2)*np.exp[2j*np.pi*(2*np.rand(np.size(p2)) - 1)]
-        s  = abs(s)* np.exp[2j*np.pi*(2*np.rand(np.size(s)) - 1)]
+        p1 = abs(p1)*np.exp[ 2j*np.pi* (2*np.random.random(np.size(p1)) - 1) ]
+        p2 = abs(p2)*np.exp[ 2j*np.pi* (2*np.random.random(np.size(p2)) - 1) ]
+        s  = abs(s)* np.exp[ 2j*np.pi* (2*np.random.random(np.size(s)) - 1) ]
 
     Bi  = p1*p2*np.conj(s)
     e12 = abs(p1*p2)**2
