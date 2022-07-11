@@ -5,9 +5,9 @@
 #      | |_/ /   _| |_/ /_  ___      --------------------------------------
 #      |  __/ | | | ___ \ |/ __|     
 #      | |  | |_| | |_/ / | (__                [ v0.9 ] - 2022
-#      \_|   \__, \____/|_|\___| 
+#      \_|   \__, \____/|_|\___|             
 #             __/ |                          G. Riggs | T. Matheny
-#            |___/   
+#            |___/                       
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -                  
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # The Bispectrum
@@ -40,7 +40,7 @@
 # fscale    -> scale for plotting frequencies [default :: 0]
 # justspec  -> true for just spectrogram [default :: false]
 # lilguy    -> set epsilon [default :: 1e-6]
-# note      -> optional string for documentation [default :: {DATE & TIME}] 
+# note      -> optional string for documentation [default :: ' '] 
 # plotit    -> start plotting tool when done [default :: false]
 # plottype  -> set desired plottable [default :: 'bicoh']
 # samprate  -> sampling rate in Hz [default :: 1]
@@ -57,8 +57,25 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/11/2022 -> Adjusted things in ParseInput() method to not confuse Python
+# with "self = BicAn" calls inside loop. This all started when I noticed
+# bugs with bic.BicAn('demo') stuff... if self.RunBicAn was set to False 
+# _before_ the "self =" assignment, the ProcessData() loop wouldn't start,
+# but setting it False after the assignment left the RunBicAn property True
+# for the original object. My idea: Assigning self to a function's output
+# just instantiated _another_ object, instead of copying over the input. 
+# Kind of fun to think about, but pernicious as all hell. Rewrote it to 
+# avoid such nonsense -> demo inputs now set data & ParseInput() again.
+# Changed pcolor to pcolormesh (documentation says it's faster!), figured 
+# out how to overplot lines and such... No "hold on/off" nonsense needed.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/10/2022 -> Tyler knocked out a few more methods, input options changed
+# slightly to allow string ('input', 'demo', etc.) as only input, cleaned 
+# up constructor a bit, added "TestSignal" and rudimentary "ProcessData".
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/09/2022 -> Hoping to finish input parsing. [...] Sweet! Constructor is 
-# all but finished, and "ParseInput" method is done.
+# all but finished, and "ParseInput" method is done... Changed the input 
+# routine again to be case insensitive (looks like the Matlab approach). 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/08/2022 -> Cleaned up a couple things, discovered the ternary operator
 # equivalent of the C magic "cond ? a : b" => "a if cond else b". Passed out
@@ -77,6 +94,34 @@
 # 7/01/2022 --> First "code." 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+# THINGS TO DO!
+# ** Configure warnings
+# ** Figure out setter functions
+# *_ Why doesn't "RunDemo" output proper object?
+# *_ Clean up constructor
+# ** Tackle input type/dimension dilemma [len() tests lists, not np arrays; arrays are not uniform!]
+# ** Implement some kind of check for Raw data! Should eliminate string, etc.
+
+# Methods left:
+#{
+# (1) Required
+# PlotPowerSpect
+# WhichPlot
+# ProcessData
+
+# (2) Extra but nice
+# SpecToCoherence
+# Coherence
+# PlotPointOut
+
+# (3) More to learn about Python...
+# SwitchPlot
+# PlotGUI
+# RefreshGUI
+# MakeMovie
+# etc.
+#}
+
 # Import dependencies
 import numpy as np
 import matplotlib.pyplot as plt
@@ -87,6 +132,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 from math import isclose
+import time
 
 
 # Define classes for bispec script
@@ -156,49 +202,12 @@ class BicAn:
     def __init__(self,inData,**kwargs):
     # ------------------
     # Constructor
-    # ------------------
-        if len(kwargs)==0:
+    # ------------------ 
+        self.ParseInput(inData,kwargs)
 
-            ### THIS IS SOOOOOO WRONG STILL!
-
-            if isinstance(inData,type(BicAn)):
-                # If object, output or go to GUI
-                print('Input is BicAn!')
-                self = inData
-                self.RunBicAn = False
-            elif isinstance(inData,list):
-                # If array input, use normalized frequencies
-                self.Raw       = inData
-                self.SampRate  = 1 
-                self.FreqRes   = 1/self.SubInt    
-                self.NormToNyq = True
-            elif isinstance(inData,str):
-                print('string!')
-                # match inData:
-                #     case 'input':
-                #         root = tk.Tk()
-                #         # Build a list of tuples for each file type the file dialog should display
-                #         my_filetypes = [('all files', '.*'), ('text files', '.txt'), ('dat files', '.dat')]
-                #         # Ask the user to select a single file name
-                #         answer = filedialog.askopenfilename(parent=root,initialdir=os.getcwd(),title="Please select a file:",filetypes=my_filetypes)  
-                #         return 
-                #     case 'demo':
-                #         answer = messagebox.askokcancel("Question","Run the demo?")
-                #         return 
-                #     case _:
-                #         return    # 0 is the default case if x is not found
-
-            else:
-                print('***WARNING*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
-        else:
-            self.Raw = inData
-            self.ParseInput(kwargs)
-            if self.RunBicAn:
-                print('You did it!')
-
-                self.Processed = self.Raw
-                #self.SpectroSTFT()
-                #bic = bic.ProcessData
+        if self.RunBicAn:
+            self.ProcessData()
+            
         return
 
 
@@ -230,59 +239,133 @@ class BicAn:
     
         print('Checking inputs...') 
 
-        for key, val in kwargs.items(): 
+        if len(kwargs)==0:
+            if isinstance(inData,type(BicAn)):
+                # If object, output or go to GUI
+                # HAS BUGS!
+                print('Input is BicAn! ')
+                #self = inData 
+                self.RunBicAn = False
 
-            # There are 2 ways to do this...
-            # The first approach is somewhat simpler, but precludes case insensitivity =^\ 
+            elif isinstance(inData,list):
+                # If array input, use normalized frequencies
+                self.Raw       = inData
+                self.SampRate  = 1 
+                self.FreqRes   = 1/self.SubInt    
+                self.NormToNyq = True
 
-            # try:                               # Throws error if input isn't a valid attribute
-            #     dum = getattr(self, key)       # Get attribute
-            #     if isinstance(val,type(dum)):  # Check type 
-            #         setattr(self, key, val)    # Set!
-            #     else: 
-            #         print('***WARNING*** :: {} must be a {}! Using default value = {}'.format(key,type(dum),dum))
-            # except AttributeError:
-            #     print('***WARNING*** :: BicAn has no {} attribute!'.format(key))
+            elif isinstance(inData,str):
+                # Check string inputs
+                self.RunBicAn = False
+                dum = inData.lower()
 
-            # This is how it's coded in the Matlab version, and doesn't care about cases! (Slower...)
+                #### Should this be global?
+                siglist = ['classic','tone','noisy','2tone','3tone','line','circle','cross_2tone','cross_3tone','cross_circle']
+                if dum == 'input':
+                    # Start getfile prompt
+                    ans = FileDialog()
 
-            dum = dir(BicAn)                                        # Get class info as list of strings
-            attr = [x.lower() for x in dum if x[0] != "_"]          # Keep only attributes, make lowercase
-            if key.lower() in attr:                                 # Make input lowercase
-                for k in range(len(attr)):                          # Loop through all attributes (slow part!)
-                    if key.lower() == attr[k]:                      # If input is an attribute:
-                        dumval = eval( 'self.{}'.format(dum[k]) )   # Get default value for type comparison
-                        if isinstance(val, type(dumval)):           # Check type
-                            setattr(self, dum[k], val)              # Set attribute
-                        else: 
-                            print('***WARNING*** :: {} must be a {}! Using default value = {}'.format(dum[k],type(dumval),dumval))        
+                    # {PARSE FILE...}
+
+                elif dum in siglist or dum == 'demo':
+                    # If explicit test signal (or demo), confirm with user, then recursively call ParseInputs
+                    ans = 'Test signal!'
+                    dum = 'tone' if dum == 'demo' else dum
+                    if messagebox.askokcancel('Question','Run the "{}" demo?'.format(dum)):
+                        sig,_,fS = TestSignal(dum)
+                        self.ParseInput(sig,{'SampRate':fS})  
+                else:
+                    ans = 'Hmmm. That string isn`t supported yet... Try ''demo'''
+                print(ans)
+
             else:
-                print('***WARNING*** :: BicAn has no {} attribute!'.format(key))
+                print('***WARNING*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
+        else:
+            
+            self.Raw = inData
 
-        # These input checks must be done in this order!
-        self.SubInt = int(abs(self.SubInt))            # Remove sign and decimals
-        if self.SubInt==0 or self.SubInt>self.Samples: # Check subinterval <= total samples
-            self.SubInt = min(512,self.Samples)        # Choose 512 as long as data isn't too short
-            print('***WARNING*** :: Subinterval too large for time-series... Using {}.'.format(self.SubInt))
+            for key, val in kwargs.items():          # Loop through all keyword : value pairs
 
-        self.FreqRes = int(abs(self.FreqRes))          # Remove sign and decimals
-        if self.FreqRes==0:                            # Check max res option
-           self.FreqRes = self.MaxRes                  # Maximum resolution  
-        elif self.FreqRes<self.MaxRes or self.FreqRes>self.SampRate/2:
-            print('***WARNING*** :: Requested resolution not possible, using maximum ({} Hz).'.format(self.MaxRes))
-            self.FreqRes = self.MaxRes
+                # There are 2 ways to do this...
+                # The first approach is somewhat simpler, but precludes case insensitivity =^\ 
+                # try:                               # Throws error if input isn't a valid attribute
+                #     dum = getattr(self, key)       # Get attribute
+                #     if isinstance(val,type(dum)):  # Check type 
+                #         setattr(self, key, val)    # Set!
+                #     else: 
+                #         print('***WARNING*** :: {} must be a {}! Using default value = {}'.format(key,type(dum),dum))
+                # except AttributeError:
+                #     print('***WARNING*** :: BicAn has no {} attribute!'.format(key))
 
-        if self.NFreq>self.SubInt:                     # Check if Fourier bins exceed subinterval
-            print('***WARNING*** :: Subinterval too small for requested resolution... Using required.')
-            self.FreqRes = self.MaxRes                 # Really hate repeating code, but...   
+                # This is how it's coded in the Matlab version, and doesn't care about cases! (Slower though...)
+                dum  = dir(BicAn)                                       # Get class info as list of strings
+                attr = [x.lower() for x in dum if x[0] != "_"]          # Keep only attributes, make lowercase
+                if key.lower() in attr:                                 # Make input lowercase
+                    for k in range(len(attr)):                          # Loop through all attributes (slow part!)
+                        if key.lower() == attr[k]:                      # If input is an attribute:
+                            dumval = eval( 'self.{}'.format(dum[k]) )   # Get default value for type comparison
+                            if isinstance(val, type(dumval)):           # Check type
+                                setattr(self, dum[k], val)              # Set attribute
+                            else: 
+                                print('***WARNING*** :: {} must be a {}! Using default value = {}'.format(dum[k],type(dumval),dumval))        
+                else:
+                    print('***WARNING*** :: BicAn has no {} attribute!'.format(key))
 
-        self.Step = int(abs(self.Step))                # Remove sign and decimals
-        if self.Step==0 or self.Step>self.SubInt:      # Check step <= subinterval
-            self.Step = self.SubInt//4;                # This seems fine?
-            print('***WARNING*** :: Step must be nonzero and less than subint... Using {}.'.format(self.Step))     
+            # These input checks must be done in this order!
+            self.SubInt = int(abs(self.SubInt))            # Remove sign and decimals
+            if self.SubInt==0 or self.SubInt>self.Samples: # Check subinterval <= total samples
+                self.SubInt = min(512,self.Samples)        # Choose 512 as long as data isn't too short
+                print('***WARNING*** :: Subinterval too large for time-series... Using {}.'.format(self.SubInt))
+
+            self.FreqRes = abs(self.FreqRes)               # Remove sign
+            if self.FreqRes==0:                            # Check max res option
+               self.FreqRes = self.MaxRes                  # Maximum resolution  
+            elif self.FreqRes<self.MaxRes or self.FreqRes>self.SampRate/2:
+                print('***WARNING*** :: Requested resolution not possible, using maximum ({} Hz).'.format(self.MaxRes))
+                self.FreqRes = self.MaxRes
+
+            if self.NFreq>self.SubInt:                     # Check if Fourier bins exceed subinterval
+                print('***WARNING*** :: Subinterval too small for requested resolution... Using required.')
+                self.FreqRes = self.MaxRes                 # Really hate repeating code, but...   
+
+            self.Step = int(abs(self.Step))                # Remove sign and decimals
+            if self.Step==0 or self.Step>self.SubInt:      # Check step <= subinterval
+                self.Step = self.SubInt//4                 # This seems fine?
+                print('***WARNING*** :: Step must be nonzero and less than subint... Using {}.'.format(self.Step))     
 
         print('done.')
         return
+
+
+    def ProcessData(self):
+    # ------------------
+    # Main processing loop
+    # ------------------
+
+        # {SOMETHING TO MAKE .PROCESSED ARRAY...?}
+
+        start = time.time()
+
+        self.ApplyZPad()
+        dum = self.SpecType.lower()
+        if dum in ['fft', 'stft', 'fourier']:
+            self.SpectroSTFT()
+            self.SpecType = 'stft'
+        elif dum in ['wave', 'wavelet', 'cwt']:
+            self.SpectroWavelet()
+            self.SpecType = 'wave'    
+
+        if not self.JustSpec:
+            self.Bicoherence()
+
+        ##################
+        end = time.time()
+
+        buf = 'Processing complete! Execution required %3.3f s.' % (end-start)
+        print(buf)
+
+        self.PlotSpectro()
+        self.PlotBispec()
 
 
     def SpectroSTFT(self):
@@ -302,6 +385,53 @@ class BicAn:
         self.er = err     
         return  
 
+    def SpectroWavelet(self):
+    # ------------------
+    # Wavelet method
+    # ------------------
+        if self.Detrend:
+            self.Processed = ApplyDetrend(self.Processed)
+        self.Processed = self.Processed - sum(self.Processed)/len(self.Processed)
+        
+        # Still need warn prompts
+        # if length(self.Processed)>self.WarnSize and self.SizeWarn:
+        #     self.SizeWarnPrompt(length(self.Processed))
+
+        nyq = self.Samples//2
+        CWT = np.zeros((nyq,nyq,self.Nseries),dtype=complex)
+
+        for k in range(self.Nseries):
+            CWT[:,:,k],f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma)
+
+        self.tv = t
+        self.fv = f
+        #self.ft =     
+        self.sg = CWT
+
+
+    def Bicoherence(self):
+    # ------------------
+    # Calculate bicoherence
+    # ------------------       
+        dum = self.sg 
+        if self.SpecType == 'wave':
+            WTrim = 50*2
+            dum = self.sg[:,WTrim:end-WTrim,:] 
+        if self.Nseries==1:
+            v = [0, 0, 0]
+            b2,B = SpecToBispec(dum,v,self.LilGuy)
+        else:
+            if self.Nseries==2:
+                v = [0, 1, 1]
+            else:
+                v = [0, 1, 2]
+            b2,B = SpecToCrossBispec(dum,v,self.LilGuy)
+            self.ff = np.concatenate((-self.fv[::-1], self.fv[1::]))
+
+        self.bs = B
+        self.bc = b2
+        return
+
 
     def PlotSpectro(self):
     # ------------------
@@ -314,14 +444,151 @@ class BicAn:
 
         fig, ax = plt.subplots()
         for k in range(self.Nseries):
-            im = ax.pcolor(self.tv/10**self.TScale,self.fv/10**self.FScale,2*np.log10(abs(self.sg[:,:,k])), cmap=self.CMap, shading='auto')
+            im = ax.pcolormesh(self.tv/10**self.TScale,self.fv/10**self.FScale,2*np.log10(abs(self.sg[:,:,k])), cmap=self.CMap, shading='auto')
             PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im)
 
         plt.show()
         return
 
 
-# Static methods
+    def PlotBispec(self):
+    # ------------------
+    # Plot bispectrum
+    # ------------------
+        fig, ax = plt.subplots()
+
+        dum, cbarstr = self.WhichPlot()
+
+        if self.Nseries==1:
+            f = self.fv/10**self.FScale
+            im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
+
+            # Draw triangle
+            plt.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.6,0.6,0.6], linewidth=3)
+            plt.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.6,0.6,0.6], linewidth=3)
+
+        else:
+            f = self.ff/10**self.FScale
+            im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
+        
+        fstr1 = '$f_1$ [%sHz]' % (ScaleToString(self.FScale))
+        fstr2 = '$f_2$ [%sHz]' % (ScaleToString(self.FScale))
+        PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im)
+
+        plt.show()
+        return      
+
+
+    def WhichPlot(self):
+    # ------------------
+    # Helper method for plots
+    # ------------------
+        guy = self.PlotType
+        if guy == 'bicoh':
+            dum = self.bc
+            cbarstr = r'$b^2(f_1,f_2)$'
+        elif guy in ['abs','real','imag','angle']:
+            dum = eval('np.{}(self.bs)'.format(guy))
+            cbarstr = r'%s%s $\mathcal{B}(f_1,f_2)$' % (guy[0].upper(),guy[1:].lower())
+        elif guy == 'mean':
+            dum = self.mb
+            cbarstr = r'$\langle b^2(f_1,f_2)\rangle$'
+        elif guy == 'std':
+            dum = self.sb
+            cbarstr = r'$\sigma_{b^2}(f_1,f_2)$'
+        return dum,cbarstr
+
+
+    def CalcMean(self,Ntrials):
+    # ------------------
+    # Calculate mean of b^2
+    # ------------------
+        dum = self.sg.shape
+        n   = dum[0]
+        m   = dum[1]
+        r   = dum[2]
+
+        v = [0,0,0]
+        A = abs(self.sg)
+        eps = 1e-16
+                
+        self.mb = np.zeros((n//2,n))
+        self.sb = self.mb
+
+        for k in range(Ntrials):
+
+            P = np.exp( 2j*np.pi * (2*np.random.random((n,m,r)) - 1) )
+
+            dumspec,_ = SpecToBispec(A*P,v,self.LilGuy)
+            old_est   = self.mb/(k + eps) # "eps" is just a convenience for first loop, since mb = 0 initially       
+                    
+            self.mb += dumspec
+            # "Online" algorithm for variance 
+            self.sb += (dumspec - old_est)*(dumspec - self.mb/(k+1))
+    
+        self.mb /= Ntrials
+        self.sb /= (Ntrials-1)
+        return
+
+
+    def PlotConfidence(self):
+
+    # Needs debugged!
+
+    # ------------------
+    # Plot confidence interval
+    # ------------------
+        old_plot = self.PlotType
+        old_dats = self.bc
+        self.PlotType = 'bicoh'
+        noise_floor   = -self.mb*np.log(1-0.999)
+        self.bc       =  self.bc * (self.bc>noise_floor)
+        #############
+        self.bc = noise_floor
+        self.PlotBispec
+        self.bc       = old_dats
+        self.PlotType = old_plot
+            
+
+    def ApplyZPad(self):
+
+    # Needs debugged!
+
+    # ------------------
+    # Zero-padding
+    # ------------------
+        if self.ZPad:
+            tail_error = self.Samples % self.SubInt
+            if tail_error != 0:
+                # Add enough zeros to make subint evenly divide samples
+                
+                #self.Processed = np.concatenate( self.Raw, np.zeros((self.Nseries, self.SubInt-tail_error)) )
+                self.Processed = np.concatenate(( self.Raw, np.zeros(self.SubInt-tail_error) ))
+
+            else:
+                self.Processed = self.Raw
+        else:
+            # Truncate time series to fit integer number of stepped subintervals
+            samplim = self.Step* (self.Samples - self.SubInt)//self.Step + self.SubInt
+            
+            #self.Processed = self.Raw[:,0:samplim]
+            self.Processed = self.Raw[0:samplim]
+
+
+def FileDialog():
+# ------------------
+# Ganked from StackExchange...
+# ------------------
+    root = tk.Tk()
+    # Build a list of tuples for each file type the file dialog should display
+    my_ftypes = [('all files', '.*'), ('text files', '.txt'), ('dat files', '.dat')]
+    # Ask the user to select a single file name
+    ans = filedialog.askopenfilename(parent=root,initialdir=os.getcwd(),title="Please select a file:",filetypes=my_ftypes)  
+    return ans
+
+
+# Module methods
+
 def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
 # ------------------
 # Convenience function
@@ -374,7 +641,7 @@ def ImageTest(t,f,dats):
     fig, ax = plt.subplots()
 
     #im = ax.imshow(dats, cmap='plasma')
-    im = ax.pcolor(t,f,dats, cmap='plasma', shading='auto')
+    im = ax.pcolormesh(t,f,dats, cmap='plasma', shading='auto')
     
     fsize = 14
     fweight = 'normal'
@@ -387,11 +654,30 @@ def ImageTest(t,f,dats):
 
 def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
 # ------------------
-# Provides FM test signal
-# ------------------        
+# Provides 3-osc FM test signal
+# ------------------
+# [sig,t] = SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy)
+# . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 
+# INPUTS:
+# fS    --> Sampling frequency in Hz
+# tend  --> End time [t = 0:1/fS:tend]
+# Ax    --> Amplitude of oscillation #1
+# fx    --> Frequency "       "      #1
+# Afx   --> Amplitude of frequency sweep
+# Ay    --> Amplitude of oscillation #2
+# fy    --> Frequency "       "      #2
+# Afy   --> Amplitude of frequency sweep
+# Az    --> Amplitude of oscillation #3
+# Ff    --> Frequency of frequency mod.
+# noisy --> Noise floor
+# OUTPUTS:
+# sig   --> Signal 
+# t     --> Time vector
+# . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .               
     t = np.arange(0,tend,1/fS)  # Time-vector sampled at "fS" Hz
 
-    x = 0*t
+    # Will have to FIX THIS later...
+    #sig = np.zeros((1,len(t)))
 
     # Make 3 sinusoidal signals...
     dfx = Afx*np.sin(2*np.pi*t*Ff)  
@@ -402,6 +688,55 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
 
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
     return sig,t,fS
+
+
+def TestSignal(whatsig):
+# ------------------
+# Provides FM test signal
+# ------------------
+    fS   = 200
+    tend = 100
+    noisy = 2
+    dum = whatsig.lower()
+    if dum == 'classic':
+        inData,t,_ = SignalGen(fS,tend,1,45,6,1,22,10,1,1/20,noisy)
+    elif dum == 'tone':
+        inData,t,_ = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
+    elif dum == 'noisy':
+        inData,t,_ = SignalGen(fS,tend,1,22,0,0,0,0,0,0,5*noisy)
+    elif dum == '2tone':
+        inData,t,_ = SignalGen(fS,tend,1,22,0,1,45,0,0,0,noisy)
+    elif dum == '3tone':
+        inData,t,_ = SignalGen(fS,tend,1,22,0,1,45,0,1,0,noisy)
+    elif dum == 'line':
+        inData,t,_ = SignalGen(fS,tend,1,22,0,1,45,10,1,1/20,noisy)
+    elif dum == 'circle':
+        inData,t,_ = SignalGen(fS,tend,1,22,10,1,45,10,1,1/20,noisy)
+    elif dum == 'fast_circle':
+        inData,t,_ = SignalGen(fS,tend,1,22,5,1,45,5,1,5/20,noisy)
+    elif dum == 'cross_2tone':
+        x,t,_ = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
+        y,_,_ = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
+        inData[0,:] = x 
+        inData[1,:] = y 
+    elif dum == 'cross_3tone':
+        x,t,_ = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
+        y,_,_ = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
+        z,_,_ = SignalGen(fS,tend,1,67,0,0,0,0,0,0,noisy)
+        inData[0,:] = x 
+        inData[1,:] = y 
+        inData[2,:] = z
+    elif dum == 'cross_circle':
+        x,t,_ = SignalGen(fS,tend,1,22,10,0,0,0,0,1/20,noisy)
+        y,_,_ = SignalGen(fS,tend,1,45,10,0,0,0,0,1/20,noisy)
+        z,_,_ = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
+        inData[0,:] = x 
+        inData[1,:] = y 
+        inData[2,:] = z
+    else:
+        print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(self.whatsig)) 
+        inData,t,fS = SignalGen(fS,tend,1,22,0,0,0,0,0,0,0)
+    return inData,t,fS
 
 
 def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
@@ -420,7 +755,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
     
     win = HannWindow(nfreq)         # Apply Hann window
     
-    print(' Working...      ')
+    print('Applying STFT...      ')
     for m in range(M):
         LoadBar(m,M)
 
@@ -473,7 +808,7 @@ def ApplyCWT(sig,samprate,sigma):
     # Morlet wavelet in frequency space
     Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
 
-    print(' Working...      ')
+    print('Applying CWT...      ')
     for a in range(nyq):
         LoadBar(a,nyq)
         # Apply for each scale (read: frequency)
@@ -632,7 +967,8 @@ def LoadBar(m,M):
 # ------------------
     ch1 = '||\-/|||'
     ch2 = '_.:"^":.'
-    buf = '\b\b\b\b\b\b\b%3.0f%%%s%s' % (100*m/(M-1), ch1[m%8], ch2[m%8])
+    buf = '\b\b\b\b\b\b\b%3.0f%%%s%s' % (100*(m+1)/M, ch1[m%8], ch2[m%8])
+    # Changed m/(M-1) to (m+1)/M to avoid /0 errors 
     print(buf)
     return
 
@@ -655,140 +991,6 @@ def RunDemo():
 # ------------------
 # Demonstration
 # ------------------
-    x, t, fS = SignalGen(200,100,1,22,5,1,45,15,1,1/20,0.5)
-    
-    b = BicAn(x,SampRate=fS)
-    b.SpectroSTFT()
-    b.PlotSpectro()
+    b = BicAn('circle')
 
     return b
-
-
-
-
-def CalcMean(bic,Ntrials):
-# ------------------
-# Calculate mean of b^2
-# ------------------
-    [n,m,r] = np.size(bic.sg)
-    v = [1,1,1]
-    A = abs(bic.sg)
-            
-    if bic.nargin==0:
-        Ntrials = 100
-    bic.mb = np.zeros(np.floor(n/2),n)
-
-    bic.sb = bic.mb
-    for k in range(Ntrials):
-
-        P = np.exp(2j*np.pi*(2*np.rand(n,m,r) - 1))
-
-        dum = bic.SpecToBispec(A*P,v,bic.LilGuy)
-        old_est = bic.mb/(k - 1 + np.eps)
-                
-        bic.mb = bic.mb + dum
-        # "Online" algorithm for variance 
-        bic.sb = bic.sb + (dum - old_est)*(dum - bic.mb/k)
-    
-
-    bic.mb = bic.mb/Ntrials
-    bic.sb = bic.sb/(Ntrials-1)
-
-def PlotConfidence(bic):
-    # ------------------
-    # Plot confidence interval
-    # ------------------
-    old_plot = bic.PlotType
-    old_dats = bic.bc
-    bic.PlotType = 'bicoh'
-    noise_floor  = -bic.mb*np.log(1-0.999)
-    bic.bc       = bic.bc * (bic.bc>noise_floor)
-    #############
-    bic.bc = noise_floor
-    bic.PlotBispec
-    bic.bc       = old_dats
-    bic.PlotType = old_plot
-        
-
-def ApplyZPad(bic):
-# ------------------
-# Zero-padding
-# ------------------
-    if bic.ZPad:
-        tail_error = np.mod(bic.Samples,bic.SubInt)
-        if tail_error != 0:
-            # Add enough zeros to make subint evenly divide samples
-            bic.Processed = [bic.Raw(np.zeros(bic.Nseries, bic.SubInt-tail_error))]
-        bic.Processed = bic.Raw
-    else:
-        # Truncate time series to fit integer number of stepped subintervals
-        samplim = bic.Step*np.floor((bic.Samples - bic.SubInt)/bic.Step) + bic.SubInt
-        bic.Processed = bic.Raw[:,1:samplim]
-
-def SizeWarnPrompt(bic,n):
-# ------------------
-# Prompt for 
-# ------------------
-    str = print('nf = %d', n) 
-    qwer = messagebox.askquestion('FFT elements exceed 1000...','Continue?', icon='question')
-    np.pause(np.eps)
-    if qwer=='No':
-        print('\nOperation terminated by user.\n')
-        return         # Bail if that seems scary! 
-    np.pause(np.eps)
-
-
-
-def Bicoherence(bic):
-# ------------------
-# Calculate bicoherence
-# ------------------
-    if bic.Nseries==1:
-        v = [1,1,1]
-        [b2,B] = bic.SpecToBispec(bic.sg,v,bic.LilGuy)
-    else:
-        if bic.Nseries==2:
-            v = [1,2,2]
-        else:
-            v = [1,2,3]
-        [b2,B] = bic.SpecToCrossBispec(bic.sg,v,bic.LilGuy)
-        bic.ff = [-bic.fv[:-1:2],bic.fv]
-
-    bic.bs = B
-    bic.bc = b2
-
-
-
-def PlotBispec(bic):
-# ------------------
-# Plot bispectrum
-# ------------------
-    guy = bic.PlotType
-    if guy == 'bicoh':
-        dum = bic.bc
-        cbarstr = 'b^2(f_1,f_2)'
-    elif guy == ('abs','real','imag','angle'):
-        dum = eval(print('%s(bic.bs)', guy))
-        cbarstr = print('%s%sB(f_1,f_2)', np.upper(guy[1]), guy[2:])
-    elif guy == 'mean':
-        dum = bic.mb
-        cbarstr = '\langleb^2(f_1,f_2)\rangle'
-    elif guy == 'std':
-        dum = np.sqrt(bic.sb)
-        cbarstr = '\sigma_{b^2}(f_1,f_2)'
-    
-    if bic.Nseries==1:
-        f = bic.fv/10^bic.FScale
-        plt.imagesc(f,f/2,dum) 
-        plt.ylim([0, f()/2])
-        plt.line([0,f()/2], [0,f()/2], 'linewidth', 2.5, 'color', 0.5*[1,1,1])
-        plt.line([f()/2, f()], [f()/2,0], 'linewidth', 2.5, 'color', 0.5*[1,1,1])
-    else:
-        f = bic.ff/10^bic.FScale
-        plt.imagesc(f,f,dum) 
-    
-    fstr1 = print('f_1 [%sHz]',bic.ScaleToString(bic.FScale))
-    fstr2 = print('f_2 [%sHz]',bic.ScaleToString(bic.FScale))
-    bic.PlotLabels({fstr1,fstr2,cbarstr},bic.FontSize,bic.CbarNorth)
-    
-    plt.colormap(bic.CMap)
