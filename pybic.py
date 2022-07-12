@@ -57,10 +57,13 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/12/2022 -> Merged main branch with a patch from Tyler; between the both
+# 7/11/2022 -> Merged main branch with a patch from Tyler; between the both
 # of us, we're just about done with the necessary stuff! Slight debugging.
+# Added automatic option for "Sigma" parameter; now using plt.tight_layout()
+# to prevent that annoying "my axes labels exceed the figure" thing! Added
+# PlotPowerSpec() method, and adjusted PlotLabels() for GUI template.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/11/2022 -> Adjusted things in ParseInput() method to not confuse Python
+# 7/10/2022 -> Adjusted things in ParseInput() method to not confuse Python
 # with "self = BicAn" calls inside loop. This all started when I noticed
 # bugs with bic.BicAn('demo') stuff... if self.RunBicAn was set to False 
 # _before_ the "self =" assignment, the ProcessData() loop wouldn't start,
@@ -72,13 +75,12 @@
 # Changed pcolor to pcolormesh (documentation says it's faster!), figured 
 # out how to overplot lines and such... No "hold on/off" nonsense needed.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/10/2022 -> Tyler knocked out a few more methods, input options changed
-# slightly to allow string ('input', 'demo', etc.) as only input, cleaned 
-# up constructor a bit, added "TestSignal" and rudimentary "ProcessData".
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/09/2022 -> Hoping to finish input parsing. [...] Sweet! Constructor is 
 # all but finished, and "ParseInput" method is done... Changed the input 
 # routine again to be case insensitive (looks like the Matlab approach). 
+# Tyler knocked out a few more methods, input options changed slightly
+# to allow string ('input', 'demo', etc.) as only input, cleaned up 
+# constructor a bit, added "TestSignal" and rudimentary "ProcessData".
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/08/2022 -> Cleaned up a couple things, discovered the ternary operator
 # equivalent of the C magic "cond ? a : b" => "a if cond else b". Passed out
@@ -104,11 +106,12 @@
 # *_ Clean up constructor
 # ** Tackle input type/dimension dilemma [len() tests lists, not np arrays; arrays are not uniform!]
 # ** Implement some kind of check for Raw data! Should eliminate string, etc.
+# ** Figure out weight='bold' on ticklabels in subplots!
+# ** Do cross-b^2 stuff!!!
 
 # Methods left:
 #{
 # (1) Required
-# PlotPowerSpect
 # ...ProcessData
 
 # (2) Extra but nice
@@ -136,13 +139,13 @@ import os
 from math import isclose
 import time
 
-
 # Define classes for bispec script
 
 class BicAn:
 # Bicoherence analysis class for DSP
     
     # Properties
+    LineWidth = 2
     FontSize  = 20
     WarnSize  = 1024
     Date      = datetime.now()
@@ -162,7 +165,7 @@ class BicAn:
     SubInt    = 512
     Step      = 128
     Window    = 'hann'       
-    Sigma     = 1
+    Sigma     = 0
     JustSpec  = False
     SpecType  = 'stft'
     ErrLim    = 1e15
@@ -234,6 +237,7 @@ class BicAn:
     #      self.__Raw = Raw
     #      return
 
+
     def ParseInput(self,inData,kwargs):
     # ------------------
     # Handle inputs
@@ -252,7 +256,6 @@ class BicAn:
             elif isinstance(inData,list):
                 # If array input, use normalized frequencies
                 self.Raw       = inData
-                self.SampRate  = 1 
                 self.FreqRes   = 1/self.SubInt    
                 self.NormToNyq = True
 
@@ -262,7 +265,7 @@ class BicAn:
                 dum = inData.lower()
 
                 #### Should this be global?
-                siglist = ['classic','tone','noisy','2tone','3tone','line','circle','cross_2tone','cross_3tone','cross_circle']
+                siglist = ['classic','tone','noisy','2tone','3tone','line','circle','fast_circle','cross_2tone','cross_3tone','cross_circle']
                 if dum == 'input':
                     # Start getfile prompt
                     ans = FileDialog()
@@ -339,6 +342,31 @@ class BicAn:
         return
 
 
+    def ApplyZPad(self):
+
+    # Needs debugged!
+
+    # ------------------
+    # Zero-padding
+    # ------------------
+        if self.ZPad:
+            tail_error = self.Samples % self.SubInt
+            if tail_error != 0:
+                # Add enough zeros to make subint evenly divide samples
+                
+                #self.Processed = np.concatenate( self.Raw, np.zeros((self.Nseries, self.SubInt-tail_error)) )
+                self.Processed = np.concatenate(( self.Raw, np.zeros(self.SubInt-tail_error) ))
+
+            else:
+                self.Processed = self.Raw
+        else:
+            # Truncate time series to fit integer number of stepped subintervals
+            samplim = self.Step* (self.Samples - self.SubInt)//self.Step + self.SubInt
+            
+            #self.Processed = self.Raw[:,0:samplim]
+            self.Processed = self.Raw[0:samplim]
+
+
     def ProcessData(self):
     # ------------------
     # Main processing loop
@@ -354,6 +382,8 @@ class BicAn:
             self.SpectroSTFT()
             self.SpecType = 'stft'
         elif dum in ['wave', 'wavelet', 'cwt']:
+            if self.Sigma == 0: # Check auto
+                self.Sigma = 5*self.Samples/self.SampRate
             self.SpectroWavelet()
             self.SpecType = 'wave'    
 
@@ -424,7 +454,7 @@ class BicAn:
         dum = self.sg 
         if self.SpecType == 'wave':
             WTrim = 50*2
-            dum = self.sg[:,WTrim:end-WTrim,:] 
+            dum = self.sg[:,WTrim:-WTrim,:] 
         if self.Nseries==1:
             v = [0, 0, 0]
             b2,B = SpecToBispec(dum,v,self.LilGuy)
@@ -441,29 +471,62 @@ class BicAn:
         return
 
 
-    def PlotSpectro(self):
+    def PlotPowerSpec(self,*args):
+    # ------------------
+    # Plot power spectrum
+    # ------------------
+        if len(args)==0:
+            fig, ax = plt.subplots()
+        else:
+            fig = args[0]
+            ax  = args[1]
+
+        for k in range(self.Nseries):
+            ax.semilogy(self.fv,2*self.ft[k,:],linewidth=self.LineWidth)
+        fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
+        PlotLabels(fig,[fstr,'$|P|^2$ [arb.]'],self.FontSize,self.CbarNorth,ax,None)
+
+        if len(args)==0:
+            plt.tight_layout()
+            plt.show()
+        return
+
+
+    def PlotSpectro(self,*args):
     # ------------------
     # Plot spectrograms
     # ------------------
-        tstr = 'Time [%ss]' % (ScaleToString(self.TScale))
-        fstr = '$f$ [%sHz]' % (ScaleToString(self.FScale))
-        dum  = 'P' if self.SpecType=='stft' else 'W'
-        cbarstr = '$\log_{10}|\mathcal{%s}(t,f)|^2$' % (dum)
+        if len(args)==0:
+            fig, ax = plt.subplots()
+        else:
+            fig = args[0]
+            ax  = args[1]
 
-        fig, ax = plt.subplots()
+        tstr = r'Time [%ss]' % (ScaleToString(self.TScale))
+        fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
+        dum  = 'P' if self.SpecType=='stft' else 'W'
+        cbarstr = r'$\log_{10}|\mathcal{%s}(t,f)|^2$' % (dum)
+        #cbarstr = r'$\log_{10}|%s(t,f)|^2$' % (dum)
+
         for k in range(self.Nseries):
             im = ax.pcolormesh(self.tv/10**self.TScale,self.fv/10**self.FScale,2*np.log10(abs(self.sg[:,:,k])), cmap=self.CMap, shading='auto')
             PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im)
 
-        plt.show()
+        if len(args)==0:
+            plt.tight_layout()
+            plt.show()
         return
 
 
-    def PlotBispec(self):
+    def PlotBispec(self,*args):
     # ------------------
     # Plot bispectrum
     # ------------------
-        fig, ax = plt.subplots()
+        if len(args)==0:
+            fig, ax = plt.subplots()
+        else:
+            fig = args[0]
+            ax  = args[1]
 
         dum, cbarstr = self.WhichPlot()
 
@@ -472,18 +535,20 @@ class BicAn:
             im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
 
             # Draw triangle
-            plt.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.5,0.5,0.5], linewidth=2.5)
-            plt.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.5,0.5,0.5], linewidth=2.5)
+            ax.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.5,0.5,0.5], linewidth=2.5)
+            ax.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.5,0.5,0.5], linewidth=2.5)
 
         else:
             f = self.ff/10**self.FScale
             im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
         
-        fstr1 = '$f_1$ [%sHz]' % (ScaleToString(self.FScale))
-        fstr2 = '$f_2$ [%sHz]' % (ScaleToString(self.FScale))
+        fstr1 = r'$f_1$ [%sHz]' % (ScaleToString(self.FScale))
+        fstr2 = r'$f_2$ [%sHz]' % (ScaleToString(self.FScale))
         PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im)
 
-        plt.show()
+        if len(args)==0:
+            plt.tight_layout()
+            plt.show()
         return      
 
 
@@ -498,6 +563,7 @@ class BicAn:
         elif guy in ['abs','real','imag','angle']:
             dum = eval('np.{}(self.bs)'.format(guy))
             cbarstr = r'%s%s $\mathcal{B}(f_1,f_2)$' % (guy[0].upper(),guy[1:].lower())
+            #cbarstr = r'%s%s $B(f_1,f_2)$' % (guy[0].upper(),guy[1:].lower())
         elif guy == 'mean':
             dum = self.mb
             cbarstr = r'$\langle b^2(f_1,f_2)\rangle$'
@@ -505,6 +571,46 @@ class BicAn:
             dum = self.sb
             cbarstr = r'$\sigma_{b^2}(f_1,f_2)$'
         return dum,cbarstr
+
+
+    def PlotConfidence(self):
+
+    # Needs debugged!
+
+    # ------------------
+    # Plot confidence interval
+    # ------------------
+        old_plot = self.PlotType
+        old_dats = self.bc
+        self.PlotType = 'bicoh'
+        noise_floor   = -self.mb*np.log(1-0.999)
+        #self.bc       =  self.bc * (self.bc>noise_floor)
+        self.bc       = noise_floor
+        #############
+        self.bc = noise_floor
+        self.PlotBispec()
+        self.bc       = old_dats
+        self.PlotType = old_plot
+
+
+    def PlotGUI(self):
+    # ------------------
+    # GUI test
+    # ------------------ 
+        fig = plt.figure()
+
+        ax2 = plt.subplot(222)
+        ax3 = plt.subplot(224)
+        ax1 = plt.subplot(121)
+        
+        self.PlotSpectro(fig,ax2)
+        self.PlotPowerSpec(fig,ax3)
+        self.PlotBispec(fig,ax1)
+
+        plt.tight_layout()
+        plt.show()
+
+        return
 
 
     def CalcMean(self,Ntrials):
@@ -537,51 +643,7 @@ class BicAn:
         self.mb /= Ntrials
         self.sb /= (Ntrials-1)
         return
-
-
-    def PlotConfidence(self):
-
-    # Needs debugged!
-
-    # ------------------
-    # Plot confidence interval
-    # ------------------
-        old_plot = self.PlotType
-        old_dats = self.bc
-        self.PlotType = 'bicoh'
-        noise_floor   = -self.mb*np.log(1-0.999)
-        self.bc       =  self.bc * (self.bc>noise_floor)
-        #############
-        self.bc = noise_floor
-        self.PlotBispec
-        self.bc       = old_dats
-        self.PlotType = old_plot
             
-
-    def ApplyZPad(self):
-
-    # Needs debugged!
-
-    # ------------------
-    # Zero-padding
-    # ------------------
-        if self.ZPad:
-            tail_error = self.Samples % self.SubInt
-            if tail_error != 0:
-                # Add enough zeros to make subint evenly divide samples
-                
-                #self.Processed = np.concatenate( self.Raw, np.zeros((self.Nseries, self.SubInt-tail_error)) )
-                self.Processed = np.concatenate(( self.Raw, np.zeros(self.SubInt-tail_error) ))
-
-            else:
-                self.Processed = self.Raw
-        else:
-            # Truncate time series to fit integer number of stepped subintervals
-            samplim = self.Step* (self.Samples - self.SubInt)//self.Step + self.SubInt
-            
-            #self.Processed = self.Raw[:,0:samplim]
-            self.Processed = self.Raw[0:samplim]
-
 
     def SizeWarnPrompt(self,n):
     # ------------------
@@ -607,18 +669,23 @@ def FileDialog():
     ans = filedialog.askopenfilename(parent=root,initialdir=os.getcwd(),title="Please select a file:",filetypes=my_ftypes)  
     return ans
 
+
 def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
 # ------------------
 # Convenience function
 # ------------------
+
+    #plt.rcParams["font.weight"] = "bold"
+
     n = len(strings)
     fweight = 'normal'
-    plt.xlabel(strings[0], fontsize=fsize, fontweight=fweight)
+    ax.set_xlabel(strings[0], fontsize=fsize, fontweight=fweight)
     if n>1:
-        plt.ylabel(strings[1], fontsize=fsize, fontweight=fweight)
-    plt.xticks(size=fsize, weight='bold')
-    plt.yticks(size=fsize, weight='bold')
-    plt.minorticks_on()
+        ax.set_ylabel(strings[1], fontsize=fsize, fontweight=fweight)
+    ax.tick_params(labelsize=fsize)
+    #plt.xticks(size=fsize, weight='bold')
+    #plt.yticks(size=fsize, weight='bold')
+    ax.minorticks_on()
     if n>2:
         divider = make_axes_locatable(ax)
         if cbarNorth:
@@ -626,13 +693,15 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
             fig.colorbar(im, cax=cax, orientation='horizontal')   
             cax.xaxis.set_label_position('top') 
             cax.xaxis.tick_top()     
-            plt.xlabel(strings[2], fontsize=fsize, fontweight=fweight)
-            plt.xticks(size=fsize, weight='bold')
+            cax.set_xlabel(strings[2], fontsize=fsize, fontweight=fweight)
+            cax.tick_params(labelsize=fsize)
+            #plt.xticks(size=fsize, weight='bold')
         else:
             cax = divider.append_axes('right', size='5%', pad=0.05)
             fig.colorbar(im, cax=cax)
-            plt.ylabel(strings[2], fontsize=fsize, fontweight=fweight)
-            plt.yticks(size=fsize, weight='bold')
+            cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
+            cax.tick_params(labelsize=fsize)
+            #plt.yticks(size=fsize, weight='bold')
     cid = fig.canvas.mpl_connect('button_press_event', GetClick)
 
 
@@ -648,6 +717,7 @@ def PlotTest(t,sig):
     cbarNorth = False
     PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,[],[])
 
+    plt.tight_layout()
     plt.show()
     return
 
@@ -666,6 +736,7 @@ def ImageTest(t,f,dats):
     cbarNorth = False
     PlotLabels(fig,['$t$ [s]','$f$ [Hz]','$b^2(f_1,f_2)$'],fsize,cbarNorth,ax,im)
 
+    plt.tight_layout()
     plt.show()
     return
 
