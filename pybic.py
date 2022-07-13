@@ -3,12 +3,12 @@
 #      ______     ______ _      
 #      | ___ \    | ___ (_)          Bicoherence Analysis Module for Python
 #      | |_/ /   _| |_/ /_  ___      --------------------------------------
-#      |  __/ | | | ___ \ |/ __|     
-#      | |  | |_| | |_/ / | (__                [ v0.9 ] - 2022
-#      \_|   \__, \____/|_|\___|             
-#             __/ |                          G. Riggs | T. Matheny
+#      |  __/ | | | ___ \ |/ __|           
+#      | |  | |_| | |_/ / | (__      v1.0 (c) 2022 -- G. Riggs | T. Matheny          
+#      \_|   \__, \____/|_|\___|              
+#             __/ |                      WVU Dept. of Physics & Astronomy
 #            |___/                       
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -                  
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # The Bispectrum
 # B_xyz(f1,f2) = < X(f1)Y(f2)Z(f1+f2)* >, where x,y,z are time series with 
@@ -57,6 +57,13 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/12/2022 ->
+# Finally adding cross-b^2 support! Technically, we had bug-tested the routine,
+# but never sent in 2D arrays of 2 or 3 time-series....
+# the real requirement was to parse all inData as np.array...
+# Changed SpectroWavelet() to reflect recent changes with Matlab version
+# (can finally handle cross-analysis!)
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/11/2022 -> Merged main branch with a patch from Tyler; between the both
 # of us, we're just about done with the necessary stuff! Slight debugging.
 # Added automatic option for "Sigma" parameter; now using plt.tight_layout()
@@ -102,12 +109,24 @@
 # THINGS TO DO!
 # ** Configure warnings
 # ** Figure out setter functions
-# *_ Why doesn't "RunDemo" output proper object?
-# *_ Clean up constructor
-# ** Tackle input type/dimension dilemma [len() tests lists, not np arrays; arrays are not uniform!]
-# ** Implement some kind of check for Raw data! Should eliminate string, etc.
-# ** Figure out weight='bold' on ticklabels in subplots!
-# ** Do cross-b^2 stuff!!!
+# __ Why doesn't "RunDemo" output proper object?
+# __ Clean up constructor
+
+# *_ Tackle input type/dimension dilemma [len() tests lists, not np arrays; arrays are not uniform!]
+# ~> Will probably just have some "dum = self.Raw.shape()" thing.
+
+# *_ Implement some kind of check for Raw data! Should eliminate string, etc.
+
+# __ Figure out weight='bold' on ticklabels in subplots!
+# ~> This seems kind of brutal. Clearly there's some way to do it, but we need the effect of plt.xticks(size=..., weight=...)
+#    for axes (ax_i), but ax.set_xticks(ticks, labels, **kwargs) isn't exactly the same! According the the docs, you can only 
+#    pass text params if "label" has been supplied, otherwise ax.tick_params(...) is required. I've tried copying with 
+#    lab = ax.get_ticklabels() first, but ax.set_ticklabels(lab) does nothing. I scanned the source for the wrapper function 
+#    that _must_ exist, but it crossed my eyes a bit. I'll get it, but in the meantime: All hail the elegance.
+#### NEVERMIND %^o
+
+# *_ Do cross-b^2 stuff!!!
+# ~> This are about to get weird!
 
 # Methods left:
 #{
@@ -121,7 +140,7 @@
 
 # (3) More to learn about Python...
 # SwitchPlot
-# PlotGUI
+# ...PlotGUI
 # RefreshGUI
 # MakeMovie
 # etc.
@@ -130,6 +149,7 @@
 # Import dependencies
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
 import warnings
@@ -145,21 +165,22 @@ class BicAn:
 # Bicoherence analysis class for DSP
     
     # Properties
-    LineWidth = 2
-    FontSize  = 20
     WarnSize  = 1024
     Date      = datetime.now()
     MaxRes    = 0
     Samples   = 0
     NFreq     = 0
+
     RunBicAn  = False
     NormToNyq = False
     Nseries   = 1
     WinVec    = []     
 
+    Note      = ' '
     Raw       = []
     Processed = []
     History   = ' '
+
     SampRate  = 1
     FreqRes   = 0
     SubInt    = 512
@@ -168,25 +189,33 @@ class BicAn:
     Sigma     = 0
     JustSpec  = False
     SpecType  = 'stft'
+    Bispectro = False
+
     ErrLim    = 1e15
     FScale    = 0
     TScale    = 0
-    Filter    = 'none'
-    Bispectro = False
-    Smooth    = 1
-    PlotIt    = False
+    Filter    = 'none' 
+    Smooth    = 1  
     LilGuy    = 1e-6
     SizeWarn  = True
+    BicVec    = [0,0,0]
+
+    PlotIt    = True
     CMap      = 'viridis'
     CbarNorth = True
     PlotType  = 'bicoh'
     ScaleAxes = 'manual'
+    LineWidth = 2
+    FontSize  = 20
+    PlotSlice = 0
+
     Verbose   = True
     Detrend   = False
     ZPad      = False
     Cross     = False
     Vector    = False
     TZero     = 0
+
     tv = [] # Time vector
     fv = [] # Frequency vector
     ff = [] # Full frequency vector
@@ -227,8 +256,13 @@ class BicAn:
         return int(self.SampRate / self.FreqRes)
 
     @property
+    def Nseries(self): # Number of time series
+        return len(self.Raw)
+
+    @property
     def Samples(self): # Samples in data
-        val = len(self.Raw) if len(self.Processed)==0 else len(self.Processed)
+        #val = len(self.Raw) if len(self.Processed)==0 else len(self.Processed)
+        val = max(self.Raw.shape) if len(self.Processed)==0 else max(self.Processed.shape)
         return val
 
     # Set functions
@@ -287,7 +321,24 @@ class BicAn:
                 print('***WARNING*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
         else:
             
-            self.Raw = inData
+            sz = inData.shape
+            # Check if 1 or 2D numpy array
+            if len(sz)<3 and isinstance(inData,type(np.array(0))):
+
+                N = max(sz)                     # Get long dimension
+                if len(sz)==1:                  # Check vector
+                    self.Raw = np.zeros((1,N))  # Initialize array
+                    self.Raw[0,:] = inData      # Place data
+
+                elif len(sz)==2:                      # Must be 2D
+                    self.Raw = np.zeros((min(sz),N))  # Initialize
+                    if sz[0] > sz[1]:                 # Check column vector
+                        inData = np.transpose(inData) # Transpose if so
+
+                    self.Raw = inData                 # Boom!
+
+            else:
+                error()
 
             for key, val in kwargs.items():          # Loop through all keyword : value pairs
 
@@ -354,8 +405,8 @@ class BicAn:
             if tail_error != 0:
                 # Add enough zeros to make subint evenly divide samples
                 
-                #self.Processed = np.concatenate( self.Raw, np.zeros((self.Nseries, self.SubInt-tail_error)) )
-                self.Processed = np.concatenate(( self.Raw, np.zeros(self.SubInt-tail_error) ))
+                self.Processed = np.concatenate( self.Raw, np.zeros((self.Nseries, self.SubInt-tail_error)) )
+                #self.Processed = np.concatenate(( self.Raw, np.zeros(self.SubInt-tail_error) ))
 
             else:
                 self.Processed = self.Raw
@@ -363,17 +414,14 @@ class BicAn:
             # Truncate time series to fit integer number of stepped subintervals
             samplim = self.Step* (self.Samples - self.SubInt)//self.Step + self.SubInt
             
-            #self.Processed = self.Raw[:,0:samplim]
-            self.Processed = self.Raw[0:samplim]
+            self.Processed = self.Raw[:,0:samplim]
+            #self.Processed = self.Raw[0:samplim]
 
 
     def ProcessData(self):
     # ------------------
     # Main processing loop
     # ------------------
-
-        # {SOMETHING TO MAKE .PROCESSED ARRAY...?}
-
         start = time.time()
 
         self.ApplyZPad()
@@ -382,8 +430,6 @@ class BicAn:
             self.SpectroSTFT()
             self.SpecType = 'stft'
         elif dum in ['wave', 'wavelet', 'cwt']:
-            if self.Sigma == 0: # Check auto
-                self.Sigma = 5*self.Samples/self.SampRate
             self.SpectroWavelet()
             self.SpecType = 'wave'    
 
@@ -393,13 +439,17 @@ class BicAn:
         ##################
         end = time.time()
 
-        buf = 'Processing complete! Execution required %3.3f s.' % (end-start)
+        buf = 'Complete! Process required %.5f s.' % (end-start)
         print(buf)
 
-        self.PlotSpectro()
-        self.PlotBispec()
+        if self.Verbose:
+            print(self)      
+
+        if self.PlotIt:       
+            self.PlotGUI()
 
 
+    ## Analysis
     def SpectroSTFT(self):
     # ------------------
     # STFT method
@@ -412,8 +462,6 @@ class BicAn:
         self.tv = t
         self.fv = f
 
-        # for k in range(self.Nseries):
-        #     self.ft[k,:] = mean(abs(spec(:,:,k)'))
         self.ft = afft
 
         self.sg = spec
@@ -425,24 +473,26 @@ class BicAn:
     # ------------------
     # Wavelet method
     # ------------------
+        if self.Sigma == 0: # Check auto
+            self.Sigma = 5*self.Samples/self.SampRate
+
         if self.Detrend:
-            self.Processed = ApplyDetrend(self.Processed)
+            for k in range(self.Nseries):
+                self.Processed[k,:] = ApplyDetrend(self.Processed[k,:])
+
         # Subtract mean
-        self.Processed = self.Processed - sum(self.Processed)/len(self.Processed)
+        for k in range(self.Nseries):
+            self.Processed[k,:] = self.Processed[k,:] - sum(self.Processed[k,:] / len(self.Processed[k,:]) )
         
         # Warn prompt
         if self.Samples>self.WarnSize and self.SizeWarn:
             self.SizeWarnPrompt(self.Samples)
 
-        nyq = self.Samples//2
-        CWT = np.zeros((nyq,nyq,self.Nseries),dtype=complex)
+        CWT,acwt,f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma)
 
-        for k in range(self.Nseries):
-            CWT[:,:,k],f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma)
-
-        self.tv = t
+        self.tv = t + self.TZero
         self.fv = f
-        #self.ft =     
+        self.ft = acwt 
         self.sg = CWT
         return
 
@@ -456,14 +506,14 @@ class BicAn:
             WTrim = 50*2
             dum = self.sg[:,WTrim:-WTrim,:] 
         if self.Nseries==1:
-            v = [0, 0, 0]
-            b2,B = SpecToBispec(dum,v,self.LilGuy)
+            self.BicVec = [0, 0, 0]
+            b2,B = SpecToBispec(dum,self.BicVec,self.LilGuy)
         else:
             if self.Nseries==2:
-                v = [0, 1, 1]
+                self.BicVec = [0, 1, 1]
             else:
-                v = [0, 1, 2]
-            b2,B = SpecToCrossBispec(dum,v,self.LilGuy)
+                self.BicVec = [0, 1, 2]
+            b2,B = SpecToCrossBispec(dum,self.BicVec,self.LilGuy)
             self.ff = np.concatenate((-self.fv[::-1], self.fv[1::]))
 
         self.bs = B
@@ -471,6 +521,38 @@ class BicAn:
         return
 
 
+    def CalcMean(self,Ntrials):
+    # ------------------
+    # Calculate mean of b^2
+    # ------------------
+        n,m,r = self.sg.shape
+
+        A = abs(self.sg)
+        eps = 1e-16
+                
+        self.mb = np.zeros( (self.bc.shape) )
+        self.sb = np.zeros( (self.bc.shape) )
+
+        for k in range(Ntrials):
+
+            P = np.exp( 2j*np.pi * (2*np.random.random((n,m,r)) - 1) )
+
+            if self.Nseries==1:
+                dumspec,_ = SpecToBispec(A*P,self.BicVec,self.LilGuy)
+            else:
+                dumspec,_ = SpecToCrossBispec(A*P,self.BicVec,self.LilGuy)
+            old_est   = self.mb/(k + eps) # "eps" is just a convenience for first loop, since mb = 0 initially       
+                    
+            self.mb += dumspec
+            # "Online" algorithm for variance 
+            self.sb += (dumspec - old_est)*(dumspec - self.mb/(k+1))
+    
+        self.mb /= Ntrials
+        self.sb /= (Ntrials-1)
+        return  
+
+
+    ## Plot methods
     def PlotPowerSpec(self,*args):
     # ------------------
     # Plot power spectrum
@@ -481,10 +563,15 @@ class BicAn:
             fig = args[0]
             ax  = args[1]
 
+        f = self.fv/10**self.FScale
+
         for k in range(self.Nseries):
-            ax.semilogy(self.fv,2*self.ft[k,:],linewidth=self.LineWidth)
+            ax.semilogy(f,self.ft[k,:]**2,linewidth=self.LineWidth)
         fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
-        PlotLabels(fig,[fstr,'$|P|^2$ [arb.]'],self.FontSize,self.CbarNorth,ax,None)
+        ystr = r'$|\mathcal{%s}|^2$ [arb.]' % ('P' if self.SpecType=='stft' else 'W')
+        PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None)
+        ax.set_xlim(f[0], f[-1])
+        #plt.grid(True)
 
         if len(args)==0:
             plt.tight_layout()
@@ -504,13 +591,17 @@ class BicAn:
 
         tstr = r'Time [%ss]' % (ScaleToString(self.TScale))
         fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
-        dum  = 'P' if self.SpecType=='stft' else 'W'
-        cbarstr = r'$\log_{10}|\mathcal{%s}(t,f)|^2$' % (dum)
-        #cbarstr = r'$\log_{10}|%s(t,f)|^2$' % (dum)
+        cbarstr = r'$\log_{10}|\mathcal{%s}(t,f)|^2$' % ('P' if self.SpecType=='stft' else 'W')
 
-        for k in range(self.Nseries):
-            im = ax.pcolormesh(self.tv/10**self.TScale,self.fv/10**self.FScale,2*np.log10(abs(self.sg[:,:,k])), cmap=self.CMap, shading='auto')
+        t = self.tv/10**self.TScale
+        f = self.fv/10**self.FScale
+
+        #for k in range(self.Nseries):
+        for k in range(1):
+            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,k])), cmap=self.CMap, shading='auto')
             PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im)
+            ax.set_xlim(t[0], t[-1])
+            ax.set_ylim(f[0], f[-1])
 
         if len(args)==0:
             plt.tight_layout()
@@ -533,6 +624,7 @@ class BicAn:
         if self.Nseries==1:
             f = self.fv/10**self.FScale
             im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
+            ax.set_ylim(f[0], f[-1]/2)
 
             # Draw triangle
             ax.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.5,0.5,0.5], linewidth=2.5)
@@ -541,10 +633,12 @@ class BicAn:
         else:
             f = self.ff/10**self.FScale
             im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
+            ax.set_ylim(f[0], f[-1])
         
         fstr1 = r'$f_1$ [%sHz]' % (ScaleToString(self.FScale))
         fstr2 = r'$f_2$ [%sHz]' % (ScaleToString(self.FScale))
         PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im)
+        ax.set_xlim(f[0], f[-1])
 
         if len(args)==0:
             plt.tight_layout()
@@ -563,7 +657,7 @@ class BicAn:
         elif guy in ['abs','real','imag','angle']:
             dum = eval('np.{}(self.bs)'.format(guy))
             cbarstr = r'%s%s $\mathcal{B}(f_1,f_2)$' % (guy[0].upper(),guy[1:].lower())
-            #cbarstr = r'%s%s $B(f_1,f_2)$' % (guy[0].upper(),guy[1:].lower())
+            cbarstr = r'$\beta(f_1,f_2)$' if guy=='angle' else cbarstr
         elif guy == 'mean':
             dum = self.mb
             cbarstr = r'$\langle b^2(f_1,f_2)\rangle$'
@@ -613,38 +707,6 @@ class BicAn:
         return
 
 
-    def CalcMean(self,Ntrials):
-    # ------------------
-    # Calculate mean of b^2
-    # ------------------
-        dum = self.sg.shape
-        n   = dum[0]
-        m   = dum[1]
-        r   = dum[2]
-
-        v = [0,0,0]
-        A = abs(self.sg)
-        eps = 1e-16
-                
-        self.mb = np.zeros((n//2,n))
-        self.sb = self.mb
-
-        for k in range(Ntrials):
-
-            P = np.exp( 2j*np.pi * (2*np.random.random((n,m,r)) - 1) )
-
-            dumspec,_ = SpecToBispec(A*P,v,self.LilGuy)
-            old_est   = self.mb/(k + eps) # "eps" is just a convenience for first loop, since mb = 0 initially       
-                    
-            self.mb += dumspec
-            # "Online" algorithm for variance 
-            self.sb += (dumspec - old_est)*(dumspec - self.mb/(k+1))
-    
-        self.mb /= Ntrials
-        self.sb /= (Ntrials-1)
-        return
-            
-
     def SizeWarnPrompt(self,n):
     # ------------------
     # Prompt for CPU health
@@ -674,17 +736,31 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
 # ------------------
 # Convenience function
 # ------------------
-
     #plt.rcParams["font.weight"] = "bold"
+    # Uncomment this for ALL bold
+
+    # plt.rcParams.update({
+    #     "font.weight": "bold",  # bold fonts
+    #     "tick.labelsize": 15,   # large tick labels
+    #     "lines.linewidth": 1,   # thick lines
+    #     "lines.color": "k",     # black lines
+    #     "grid.color": "0.5",    # gray gridlines
+    #     "grid.linestyle": "-",  # solid gridlines
+    #     "grid.linewidth": 0.5,  # thin gridlines
+    #     "savefig.dpi": 300,     # higher resolution output.
+    # })
 
     n = len(strings)
     fweight = 'normal'
+    tickweight = 'bold'
     ax.set_xlabel(strings[0], fontsize=fsize, fontweight=fweight)
     if n>1:
         ax.set_ylabel(strings[1], fontsize=fsize, fontweight=fweight)
-    ax.tick_params(labelsize=fsize)
-    #plt.xticks(size=fsize, weight='bold')
-    #plt.yticks(size=fsize, weight='bold')
+        #ax.tick_params(labelsize=fsize, labelweight=fweight)
+        
+    plt.sca(ax)# YESSSSSS!
+    plt.xticks(size=fsize, weight=tickweight)
+    plt.yticks(size=fsize, weight=tickweight)
     ax.minorticks_on()
     if n>2:
         divider = make_axes_locatable(ax)
@@ -694,14 +770,14 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
             cax.xaxis.set_label_position('top') 
             cax.xaxis.tick_top()     
             cax.set_xlabel(strings[2], fontsize=fsize, fontweight=fweight)
-            cax.tick_params(labelsize=fsize)
-            #plt.xticks(size=fsize, weight='bold')
+            #cax.tick_params(labelsize=fsize)
+            plt.xticks(size=fsize, weight=tickweight)
         else:
             cax = divider.append_axes('right', size='5%', pad=0.05)
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
-            cax.tick_params(labelsize=fsize)
-            #plt.yticks(size=fsize, weight='bold')
+            #cax.tick_params(labelsize=fsize)
+            plt.yticks(size=fsize, weight=tickweight)
     cid = fig.canvas.mpl_connect('button_press_event', GetClick)
 
 
@@ -715,7 +791,7 @@ def PlotTest(t,sig):
 
     fsize = 14
     cbarNorth = False
-    PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,[],[])
+    PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,None,None)
 
     plt.tight_layout()
     plt.show()
@@ -765,9 +841,6 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
 # . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .        
     t = np.arange(0,tend,1/fS)  # Time-vector sampled at "fS" Hz
 
-    # Will have to FIX THIS later...
-    #sig = np.zeros((1,len(t)))
-
     # Make 3 sinusoidal signals...
     dfx = Afx*np.sin(2*np.pi*t*Ff)  
     dfy = Afy*np.cos(2*np.pi*t*Ff)
@@ -804,21 +877,24 @@ def TestSignal(whatsig):
     elif dum == 'fast_circle':
         inData,t,_ = SignalGen(fS,tend,1,22,5,1,45,5,1,5/20,noisy)
     elif dum == 'cross_2tone':
-        x,t,_ = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
-        y,_,_ = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
+        x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
+        y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
+        inData = np.zeros( (2, len(t)) )
         inData[0,:] = x 
         inData[1,:] = y 
     elif dum == 'cross_3tone':
-        x,t,_ = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
-        y,_,_ = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
-        z,_,_ = SignalGen(fS,tend,1,67,0,0,0,0,0,0,noisy)
+        x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
+        y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
+        z,_,_  = SignalGen(fS,tend,1,67,0,0,0,0,0,0,noisy)
+        inData = np.zeros( (3, len(t)) )
         inData[0,:] = x 
         inData[1,:] = y 
         inData[2,:] = z
     elif dum == 'cross_circle':
-        x,t,_ = SignalGen(fS,tend,1,22,10,0,0,0,0,1/20,noisy)
-        y,_,_ = SignalGen(fS,tend,1,45,10,0,0,0,0,1/20,noisy)
-        z,_,_ = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
+        x,t,_  = SignalGen(fS,tend,1,22,10,0,0,0,0,1/20,noisy)
+        y,_,_  = SignalGen(fS,tend,1,45,10,0,0,0,0,1/20,noisy)
+        z,_,_  = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
+        inData = np.zeros( (3, len(t)) )
         inData[0,:] = x 
         inData[1,:] = y 
         inData[2,:] = z
@@ -832,8 +908,8 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 # ------------------
 # STFT static method
 # ------------------
-    N = 1
-    M = 1 + (len(sig) - subint)//step
+    N = len(sig)
+    M = 1 + (max(sig.shape) - subint)//step
     lim  = nfreq//2                 # lim = |_ Nyquist/res _|
     time_vec = np.zeros(M)          # Time vector
     err  = np.zeros((N,M))          # Mean information
@@ -850,8 +926,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
         time_vec[m] = t0 + m*step/samprate
         for k in range(N):
-            Ym = sig[m*step : m*step + subint] # Select subinterval 
-            #Ym = sig[k,0:subint-1 + m*step] # Select subinterval     
+            Ym = sig[k, m*step : m*step + subint] # Select subinterval    
             Ym = Ym[0:nfreq]            # Take only what is needed for res
             if detrend:                 # Remove linear least-squares fit
                 Ym = ApplyDetrend(Ym)
@@ -883,38 +958,42 @@ def ApplyCWT(sig,samprate,sigma):
 # ------------------
 # Wavelet static method
 # ------------------
-    Nsig = len(sig)
+    N    = sig.shape[0]
+    Nsig = sig.shape[1]
     nyq  = Nsig//2
 
     f0 = samprate/Nsig
     freq_vec = np.arange(nyq)*f0
     
-    CWT = np.zeros((nyq,nyq),dtype=complex)
+    acwt = np.zeros((N,nyq))
+    CWT  = np.zeros((nyq,nyq,N),dtype=complex)
 
-    fft_sig = np.fft.fft(sig)
-    fft_sig = fft_sig[0:nyq]
+    for k in range(N):
+        fft_sig = np.fft.fft(sig[k,:])
+        fft_sig = fft_sig[0:nyq]
 
-    # Morlet wavelet in frequency space
-    Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
+        # Morlet wavelet in frequency space
+        Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
 
-    print('Applying CWT...      ')
-    for a in range(nyq):
-        LoadBar(a,nyq)
-        # Apply for each scale (read: frequency)
-        CWT[a,:] = np.fft.ifft(fft_sig * Psi(a+1))
-    print('\b\b\b^]\n')
+        print('Applying CWT...      ')
+        for a in range(nyq):
+            LoadBar(a,nyq)
+            # Apply for each scale (read: frequency)
+            dum = np.fft.ifft(fft_sig * Psi(a+1))
+            CWT[a,:,k] = dum
+
+            acwt[k,a]  = sum(abs(dum)) / len(dum)
+        print('\b\b\b^]\n')
 
     time_vec = np.arange(0,Nsig,2)/samprate
-    return CWT,freq_vec,time_vec
+    return CWT,acwt,freq_vec,time_vec
 
 
 def SpecToBispec(spec,v,lilguy):
 # ------------------
 # Turns spectrogram to b^2
 # ------------------
-    dum = spec.shape
-    nfreq  = dum[0]
-    slices = dum[1]
+    nfreq,slices,_ = spec.shape
 
     lim = nfreq
 
@@ -950,9 +1029,7 @@ def SpecToCrossBispec(spec,v,lilguy):
 # ------------------
 # Turns 2 or 3 spectrograms to b^2
 # ------------------
-    dum = spec.shape
-    nfreq  = dum[0]
-    slices = dum[1]
+    nfreq,slices,_ = spec.shape
 
     vec = np.arange(-(nfreq-1),nfreq)
     lim = 2*nfreq-1
