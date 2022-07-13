@@ -24,45 +24,56 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Inputs
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-# inData    -> time-series {or structure}
+# inData    -> time-series [numpy.array (N,)/(N,1)/(N,2)/(N,3) & transpose]
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # additional options... (see below for instructions)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# autoscale -> autoscaling in figures [default :: false]
-# bispectro -> computes bispectrogram [default :: false]
-# cbarnorth -> control bolorbar location [default :: true]
-# cmap      -> adjust colormap [default :: viridis]
-# dealias   -> applies antialiasing (LP) filter [default :: false]
-# detrend   -> remove linear trend from data [default :: false]
-# errlim    -> mean(fft) condition [default :: inf] 
-# filter    -> xxxxxxxxxxxxxxx [default :: 'none']
-# freqres   -> desired frequency resolution [Hz]
-# fscale    -> scale for plotting frequencies [default :: 0]
-# justspec  -> true for just spectrogram [default :: false]
-# lilguy    -> set epsilon [default :: 1e-6]
-# note      -> optional string for documentation [default :: ' '] 
-# plotit    -> start plotting tool when done [default :: false]
-# plottype  -> set desired plottable [default :: 'bicoh']
-# samprate  -> sampling rate in Hz [default :: 1]
-# sigma     -> parameter for wavelet spectrum [default :: 1]
-# spectype  -> set desired time-freq. method [default :: 'stft']
-# step      -> step size for Welch method in samples [default :: 512]
-# subint    -> subinterval size in samples [default :: 128]
-# sizewarn  -> warning for matrix size [default :: true]
-# smooth    -> smooths FFT by n samples [default :: 1]
-# tscale    -> scale for plotting time [default :: 0]
-# verbose   -> allow printing of info structure [default :: true]
-# window    -> select window function [default :: 'hann']
-# zpad      -> add zero-padding to end of time-series [default :: true]
+# autoscale -> autoscaling in figures                  [default :: False]
+# bispectro -> computes bispectrogram                  x[default :: False]
+# cbarnorth -> control bolorbar location               [default :: True]
+# cmap      -> adjust colormap                         [default :: 'viridis']
+# dealias   -> applies antialiasing (LP) filter        x[default :: False]
+# detrend   -> remove linear trend from data           [default :: False]
+# errlim    -> mean(fft) condition                     [default :: 1e15] 
+# filter    -> xxxxxxxxxxxxxxx                         x[default :: 'none']
+# freqres   -> desired frequency resolution [Hz]       [default :: 0]
+# fscale    -> scale for plotting frequencies          [default :: 0]
+# justspec  -> true for just spectrogram               [default :: False]
+# lilguy    -> set epsilon                             [default :: 1e-6]
+# note      -> optional string for documentation       [default :: ' '] 
+# plotit    -> start plotting tool when done           [default :: False]
+# plottype  -> set desired plottable                   [default :: 'bicoh']
+# samprate  -> sampling rate in Hz                     [default :: 1]
+# sigma     -> parameter for wavelet spectrum          [default :: 0]
+# spectype  -> set desired time-freq. method           [default :: 'stft']
+# step      -> step size for Welch method in samples   [default :: 512]
+# subint    -> subinterval size in samples             [default :: 128]
+# sizewarn  -> warning for matrix size                 x[default :: True]
+# smooth    -> smooths FFT by n samples                x[default :: 1]
+# tscale    -> scale for plotting time                 [default :: 0]
+# tzero     -> initial time                            [default :: 0]
+# verbose   -> allow printing of info structure        [default :: True]
+# window    -> select window function                  x[default :: 'hann']
+# zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/12/2022 ->
-# Finally adding cross-b^2 support! Technically, we had bug-tested the routine,
-# but never sent in 2D arrays of 2 or 3 time-series....
-# the real requirement was to parse all inData as np.array...
+# 7/13/2022 -> Added SpecToCoherence() and Coherence() methods.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/12/2022 -> Figured out the weight='bold' on ticklabels in subplots! Here
+# are my notes from before it though: {Clearly there's some way to do it, but 
+# we need the effect of plt.xticks(size=..., weight=...) for axes (ax_i), and 
+# ax.set_xticks(ticks, labels, **kwargs) isn't exactly the same! According to
+# the docs, you can only pass text params if "label" has been supplied, else
+# ax.tick_params(...) is required. I've tried copying lab = ax.get_ticklabels() 
+# first, but ax.set_ticklabels(lab) does nothing. I scanned the source for the 
+# wrapper function that _must_ exist, but it crossed my eyes a bit.} [...] The
+# "trick" was just thinking about how I'd brute-force the problem in Matlab
+# (i.e., setting the axes before labeling)! Also, we finally have cross-b^2 
+# support! Technically, we had bug-tested the routine, but never sent in 2D 
+# arrays of 2 or 3 time-series. All inData now parsed as np.array, so... bugs?
 # Changed SpectroWavelet() to reflect recent changes with Matlab version
-# (can finally handle cross-analysis!)
+# (can finally handle cross-analysis!), everything seems benchmarked. $^/
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/11/2022 -> Merged main branch with a patch from Tyler; between the both
 # of us, we're just about done with the necessary stuff! Slight debugging.
@@ -91,7 +102,7 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/08/2022 -> Cleaned up a couple things, discovered the ternary operator
 # equivalent of the C magic "cond ? a : b" => "a if cond else b". Passed out
-# early so I kind of missed the night shift %^/
+# early so I kind of missed the night shift. %^/
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/07/2022 -> Tyler tackled the tedium of porting static methods over from
 # the Matlab version. Bit of debugging, but things are all but error-free.
@@ -101,7 +112,7 @@
 # Added GetClick method to obtain mouse coordinates on click ~> should be
 # incredibly helpful down the road when we're trying to get the GUI up.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/04/2022 --> Copy pasta'd some code from MATLAB class
+# 7/04/2022 --> Copy pasta'd some code from MATLAB class.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/01/2022 --> First "code." 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -117,12 +128,8 @@
 
 # *_ Implement some kind of check for Raw data! Should eliminate string, etc.
 
-# __ Figure out weight='bold' on ticklabels in subplots!
-# ~> This seems kind of brutal. Clearly there's some way to do it, but we need the effect of plt.xticks(size=..., weight=...)
-#    for axes (ax_i), but ax.set_xticks(ticks, labels, **kwargs) isn't exactly the same! According the the docs, you can only 
-#    pass text params if "label" has been supplied, otherwise ax.tick_params(...) is required. I've tried copying with 
-#    lab = ax.get_ticklabels() first, but ax.set_ticklabels(lab) does nothing. I scanned the source for the wrapper function 
-#    that _must_ exist, but it crossed my eyes a bit. I'll get it, but in the meantime: All hail the elegance.
+# __ 
+# ~> This seems kind of brutal. 
 #### NEVERMIND %^o
 
 # *_ Do cross-b^2 stuff!!!
@@ -149,7 +156,7 @@
 # Import dependencies
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
+from matplotlib.widgets import Slider, Button, RadioButtons
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
 import warnings
@@ -221,9 +228,9 @@ class BicAn:
     ff = [] # Full frequency vector
     ft = [] # Fourier amplitudes
     sg = [] # Spectrogram (complex)
-    xs = [] # Cross-spectrum
-    xc = [] # Cross-coherence
-    cs = [] # Coherence spectrum
+    cs = [] # Cross-spectrum
+    cc = [] # Cross-coherence
+    sg = [] # Coherence spectrum
     bs = [] # Bispectrum
     bc = [] # Bicoherence spectrum
     bp = [] # Biphase proxy
@@ -394,9 +401,6 @@ class BicAn:
 
 
     def ApplyZPad(self):
-
-    # Needs debugged!
-
     # ------------------
     # Zero-padding
     # ------------------
@@ -431,7 +435,10 @@ class BicAn:
             self.SpecType = 'stft'
         elif dum in ['wave', 'wavelet', 'cwt']:
             self.SpectroWavelet()
-            self.SpecType = 'wave'    
+            self.SpecType = 'wave'   
+
+        if self.Cross:
+            self.Coherence()
 
         if not self.JustSpec:
             self.Bicoherence()
@@ -494,6 +501,20 @@ class BicAn:
         self.fv = f
         self.ft = acwt 
         self.sg = CWT
+        return
+
+
+    def Coherence(self):
+    # ------------------
+    # Cross-spectrum/coh
+    # ------------------
+        if self.Nseries!=2:
+            print('***WARNING*** :: Cross-coherence requires exactly 2 signals!')
+        else:
+            cspec,crosscoh,coh = SpecToCoherence(self.sg,self.LilGuy)
+            self.cs = cspec      # Cross-spectrum
+            self.cc = crosscoh   # Cross-coherence
+            self.cg = coh        # Cohero-gram
         return
 
 
@@ -701,6 +722,12 @@ class BicAn:
         self.PlotPowerSpec(fig,ax3)
         self.PlotBispec(fig,ax1)
 
+        # axcolor = [0.1, 0.3, 0.9]
+        # rax = plt.axes([0.025, 0.5, 0.15, 0.15], facecolor=axcolor)
+        # radio = RadioButtons(rax, ('gnuplot2', 'PiYG', 'viridis'), active=0)
+        
+        # radio.on_clicked(colorfunc(1,2,3))
+
         plt.tight_layout()
         plt.show()
 
@@ -785,13 +812,13 @@ def PlotTest(t,sig):
 # ------------------
 # Debugger for plots
 # ------------------
-    fig = plt.figure()
+    fig, ax = plt.subplots()
 
     plt.plot(t,sig)
 
     fsize = 14
     cbarNorth = False
-    PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,None,None)
+    PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,ax,None)
 
     plt.tight_layout()
     plt.show()
@@ -881,7 +908,7 @@ def TestSignal(whatsig):
         y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
         inData = np.zeros( (2, len(t)) )
         inData[0,:] = x 
-        inData[1,:] = y 
+        inData[1,:] = x + y 
     elif dum == 'cross_3tone':
         x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
         y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
@@ -958,9 +985,8 @@ def ApplyCWT(sig,samprate,sigma):
 # ------------------
 # Wavelet static method
 # ------------------
-    N    = sig.shape[0]
-    Nsig = sig.shape[1]
-    nyq  = Nsig//2
+    N,Nsig = sig.shape
+    nyq    = Nsig//2
 
     f0 = samprate/Nsig
     freq_vec = np.arange(nyq)*f0
@@ -1097,6 +1123,24 @@ def GetBispec(spec,v,lilguy,j,k,rando):
     
     B = B/len(Bi)
     return w,B,Bi
+
+
+def SpecToCoherence(spec,lilguy):
+# ------------------
+# Cross-spectrum, cross-coherence, coherogram
+# ------------------
+    print('Calculating cross-coherence...')     
+    ncol = spec.shape[1]
+
+    C  = np.conj(spec[:,:,0]) * spec[:,:,1];
+    N1 = sum( np.transpose( abs(spec[:,:,0])**2 ) ) / ncol
+    N2 = sum( np.transpose( abs(spec[:,:,1])**2 ) ) / ncol
+    
+    cc = abs( sum( np.transpose(C) )/ ncol )**2
+    cc = cc / (N1*N2)
+
+    xx = (abs(C)**2) / ( ( abs(spec[:,:,0])**2 ) * ( abs(spec[:,:,1])**2 ) + lilguy )
+    return C,cc,xx 
 
 
 def HannWindow(N):
