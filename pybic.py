@@ -58,6 +58,10 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/15/2022 -> Fixed concatenation bug in ApplyZPad(), SignalGen() now outputs
+# (1,N) numpy arrays instead of (N,), and lambda has been moved out of loop 
+# in ApplyCWT(). Working on Colab notebook exposition.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/14/2022 -> Working on GUI!!! Reading a bunch of Tkinter documentation and 
 # I think I know how to proceed, but gimme a few and I'll let you know. [...]
 # So, I think that Tkinter is the way, but I was kind of confused earlier b/c
@@ -330,7 +334,7 @@ class BicAn:
                     dum = 'circle' if dum == 'demo' else dum
                     if messagebox.askokcancel('Question','Run the "{}" demo?'.format(dum)):
                         sig,_,fS = TestSignal(dum)
-                        self.ParseInput(sig,{'SampRate':fS})  
+                        self.ParseInput(sig,{'SampRate':fS, 'ZPad':True})  
                 else:
                     print('Hmmm. That string isn`t supported yet... Try "demo".')   
 
@@ -418,9 +422,9 @@ class BicAn:
             tail_error = self.Samples % self.SubInt
             if tail_error != 0:
                 # Add enough zeros to make subint evenly divide samples
-                
-                self.Processed = np.concatenate( self.Raw, np.zeros((self._Nseries, self.SubInt-tail_error)) )
-                #self.Processed = np.concatenate(( self.Raw, np.zeros(self.SubInt-tail_error) ))
+
+                dum = np.zeros((self._Nseries, self.SubInt-tail_error))
+                self.Processed = np.concatenate( (self.Raw, dum ), 1 )
 
             else:
                 self.Processed = self.Raw
@@ -908,6 +912,7 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     z = Az*np.sin(2*np.pi*(fx*t + fy*t + dfx + dfy)) # f1 + f2
 
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
+    sig = np.reshape(sig, (1,len(sig))) # Output 1xN numpy array
     return sig,t,fS
 
 
@@ -1026,12 +1031,12 @@ def ApplyCWT(sig,samprate,sigma):
     acwt = np.zeros((N,nyq))
     CWT  = np.zeros((nyq,nyq,N),dtype=complex)
 
+    # Morlet wavelet in frequency space
+    Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
+
     for k in range(N):
         fft_sig = np.fft.fft(sig[k,:])
         fft_sig = fft_sig[0:nyq]
-
-        # Morlet wavelet in frequency space
-        Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
 
         print('Applying CWT...      ')
         for a in range(nyq):
