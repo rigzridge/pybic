@@ -58,7 +58,20 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/13/2022 -> Added SpecToCoherence() and Coherence() methods.
+# 7/14/2022 -> Working on GUI!!! Reading a bunch of Tkinter documentation and 
+# I think I know how to proceed, but gimme a few and I'll let you know. [...]
+# So, I think that Tkinter is the way, but I was kind of confused earlier b/c
+# I was using the built-in matplotlib widgets (which I think are back-ended 
+# with Tkinter) to switch colormaps, etc. At this point, I don't think that 
+# the extra headache -- however small -- is worth it right now, so I'll stick
+# with the widgets. We have bells now, version 2.0 can have whistles!
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/13/2022 -> Added SpecToCoherence() and Coherence() methods. [...] Adding
+# support for np.loadtxt(...) stuff with a FileDialog(). Will need a try block
+# in the future, but for now it's actually best to try to force some errors!
+# I tried to get an exception with transposes of various inputs, but it seems
+# like all is well. =^o Also: ran a cross-wavelet-bicoherence analysis(!), and
+# fixed issue with TestSignal('cross_circle') that prevented viable b^2.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/12/2022 -> Figured out the weight='bold' on ticklabels in subplots! Here
 # are my notes from before it though: {Clearly there's some way to do it, but 
@@ -118,22 +131,10 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # THINGS TO DO!
-# ** Configure warnings
+# **Swap out matplotlib widgets for full tkinter GUI =^x
 # ** Figure out setter functions
-# __ Why doesn't "RunDemo" output proper object?
-# __ Clean up constructor
-
-# *_ Tackle input type/dimension dilemma [len() tests lists, not np arrays; arrays are not uniform!]
-# ~> Will probably just have some "dum = self.Raw.shape()" thing.
-
+# ** Configure warnings
 # *_ Implement some kind of check for Raw data! Should eliminate string, etc.
-
-# __ 
-# ~> This seems kind of brutal. 
-#### NEVERMIND %^o
-
-# *_ Do cross-b^2 stuff!!!
-# ~> This are about to get weird!
 
 # Methods left:
 #{
@@ -154,34 +155,40 @@
 #}
 
 # Import dependencies
+import os
+import time
+import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, RadioButtons
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
-import warnings
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import os
 from math import isclose
-import time
+import tkinter as tk
+from tkinter import messagebox, filedialog, ttk
+
+# Extra, definitely-not-bug-tested stuff
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+from tkinter import *
 
 # Define classes for bispec script
 
 class BicAn:
 # Bicoherence analysis class for DSP
     
-    # Properties
+    # Attributes
     WarnSize  = 1024
     Date      = datetime.now()
     MaxRes    = 0
     Samples   = 0
     NFreq     = 0
 
-    RunBicAn  = False
-    NormToNyq = False
-    Nseries   = 1
-    WinVec    = []     
+    # Private attributes
+    _RunBicAn  = False
+    _NormToNyq = False
+    _Nseries   = 1
+    _WinVec    = []     
 
     Note      = ' '
     Raw       = []
@@ -215,6 +222,7 @@ class BicAn:
     LineWidth = 2
     FontSize  = 20
     PlotSlice = 0
+    PlotSig   = 0
 
     Verbose   = True
     Detrend   = False
@@ -222,6 +230,9 @@ class BicAn:
     Cross     = False
     Vector    = False
     TZero     = 0
+
+    Figure    = 0
+    AxHands   = [0, 0, 0]
 
     tv = [] # Time vector
     fv = [] # Frequency vector
@@ -247,11 +258,10 @@ class BicAn:
     # ------------------ 
         self.ParseInput(inData,kwargs)
 
-        if self.RunBicAn:
+        if self._RunBicAn:
             self.ProcessData()
 
         return
-
 
     # Dependent properties
     @property
@@ -263,7 +273,7 @@ class BicAn:
         return int(self.SampRate / self.FreqRes)
 
     @property
-    def Nseries(self): # Number of time series
+    def _Nseries(self): # Number of time series
         return len(self.Raw)
 
     @property
@@ -283,7 +293,7 @@ class BicAn:
     # ------------------
     # Handle inputs
     # ------------------
-        self.RunBicAn = True  
+        self._RunBicAn = True  
         print('Checking inputs...') 
 
         if len(kwargs)==0:
@@ -292,37 +302,37 @@ class BicAn:
                 # HAS BUGS!
                 print('Input is BicAn! ')
                 #self = inData 
-                self.RunBicAn = False
+                self._RunBicAn = False
 
             elif isinstance(inData,list):
                 # If array input, use normalized frequencies
                 self.Raw       = inData
                 self.FreqRes   = 1/self.SubInt    
-                self.NormToNyq = True
+                self._NormToNyq = True
 
             elif isinstance(inData,str):
                 # Check string inputs
-                self.RunBicAn = False
+                self._RunBicAn = False
                 dum = inData.lower()
 
                 #### Should this be global?
-                siglist = ['classic','tone','noisy','2tone','3tone','line','circle','fast_circle','cross_2tone','cross_3tone','cross_circle']
+                siglist = ['demo','classic','tone','noisy','2tone','3tone','line','circle','fast_circle','cross_2tone','cross_3tone','cross_circle']
                 if dum == 'input':
                     # Start getfile prompt
-                    ans = FileDialog()
+                    infile = FileDialog()
+                    # Try comma-separated? ### BUGS!
+                    sig = np.loadtxt(infile, delimiter=',')  
 
-                    # {PARSE FILE...}
+                    self.ParseInput(sig,{}) 
 
-                elif dum in siglist or dum == 'demo':
+                elif dum in siglist:
                     # If explicit test signal (or demo), confirm with user, then recursively call ParseInputs
-                    ans = 'Test signal!'
-                    dum = 'tone' if dum == 'demo' else dum
+                    dum = 'circle' if dum == 'demo' else dum
                     if messagebox.askokcancel('Question','Run the "{}" demo?'.format(dum)):
                         sig,_,fS = TestSignal(dum)
                         self.ParseInput(sig,{'SampRate':fS})  
                 else:
-                    ans = 'Hmmm. That string isn`t supported yet... Try ''demo'''
-                print(ans)
+                    print('Hmmm. That string isn`t supported yet... Try "demo".')   
 
             else:
                 print('***WARNING*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
@@ -409,7 +419,7 @@ class BicAn:
             if tail_error != 0:
                 # Add enough zeros to make subint evenly divide samples
                 
-                self.Processed = np.concatenate( self.Raw, np.zeros((self.Nseries, self.SubInt-tail_error)) )
+                self.Processed = np.concatenate( self.Raw, np.zeros((self._Nseries, self.SubInt-tail_error)) )
                 #self.Processed = np.concatenate(( self.Raw, np.zeros(self.SubInt-tail_error) ))
 
             else:
@@ -484,11 +494,11 @@ class BicAn:
             self.Sigma = 5*self.Samples/self.SampRate
 
         if self.Detrend:
-            for k in range(self.Nseries):
+            for k in range(self._Nseries):
                 self.Processed[k,:] = ApplyDetrend(self.Processed[k,:])
 
         # Subtract mean
-        for k in range(self.Nseries):
+        for k in range(self._Nseries):
             self.Processed[k,:] = self.Processed[k,:] - sum(self.Processed[k,:] / len(self.Processed[k,:]) )
         
         # Warn prompt
@@ -508,7 +518,7 @@ class BicAn:
     # ------------------
     # Cross-spectrum/coh
     # ------------------
-        if self.Nseries!=2:
+        if self._Nseries!=2:
             print('***WARNING*** :: Cross-coherence requires exactly 2 signals!')
         else:
             cspec,crosscoh,coh = SpecToCoherence(self.sg,self.LilGuy)
@@ -526,11 +536,11 @@ class BicAn:
         if self.SpecType == 'wave':
             WTrim = 50*2
             dum = self.sg[:,WTrim:-WTrim,:] 
-        if self.Nseries==1:
+        if self._Nseries==1:
             self.BicVec = [0, 0, 0]
             b2,B = SpecToBispec(dum,self.BicVec,self.LilGuy)
         else:
-            if self.Nseries==2:
+            if self._Nseries==2:
                 self.BicVec = [0, 1, 1]
             else:
                 self.BicVec = [0, 1, 2]
@@ -558,7 +568,7 @@ class BicAn:
 
             P = np.exp( 2j*np.pi * (2*np.random.random((n,m,r)) - 1) )
 
-            if self.Nseries==1:
+            if self._Nseries==1:
                 dumspec,_ = SpecToBispec(A*P,self.BicVec,self.LilGuy)
             else:
                 dumspec,_ = SpecToCrossBispec(A*P,self.BicVec,self.LilGuy)
@@ -586,7 +596,7 @@ class BicAn:
 
         f = self.fv/10**self.FScale
 
-        for k in range(self.Nseries):
+        for k in range(self._Nseries):
             ax.semilogy(f,self.ft[k,:]**2,linewidth=self.LineWidth)
         fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
         ystr = r'$|\mathcal{%s}|^2$ [arb.]' % ('P' if self.SpecType=='stft' else 'W')
@@ -617,12 +627,10 @@ class BicAn:
         t = self.tv/10**self.TScale
         f = self.fv/10**self.FScale
 
-        #for k in range(self.Nseries):
-        for k in range(1):
-            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,k])), cmap=self.CMap, shading='auto')
-            PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im)
-            ax.set_xlim(t[0], t[-1])
-            ax.set_ylim(f[0], f[-1])
+        im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
+        PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im)
+        ax.set_xlim(t[0], t[-1])
+        ax.set_ylim(f[0], f[-1])
 
         if len(args)==0:
             plt.tight_layout()
@@ -642,7 +650,7 @@ class BicAn:
 
         dum, cbarstr = self.WhichPlot()
 
-        if self.Nseries==1:
+        if self._Nseries==1:
             f = self.fv/10**self.FScale
             im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
             ax.set_ylim(f[0], f[-1]/2)
@@ -708,29 +716,67 @@ class BicAn:
         self.PlotType = old_plot
 
 
-    def PlotGUI(self):
+    def RefreshGUI(self):
     # ------------------
     # GUI test
     # ------------------ 
-        fig = plt.figure()
+        fig = self.Figure
 
-        ax2 = plt.subplot(222)
-        ax3 = plt.subplot(224)
-        ax1 = plt.subplot(121)
-        
-        self.PlotSpectro(fig,ax2)
-        self.PlotPowerSpec(fig,ax3)
-        self.PlotBispec(fig,ax1)
+        # ax1 = self.AxHands[0]
+        # ax2 = self.AxHands[1]
+        # ax3 = self.AxHands[2]
 
-        # axcolor = [0.1, 0.3, 0.9]
-        # rax = plt.axes([0.025, 0.5, 0.15, 0.15], facecolor=axcolor)
-        # radio = RadioButtons(rax, ('gnuplot2', 'PiYG', 'viridis'), active=0)
+        for k in range(3):
+            self.AxHands[k].clear()
         
-        # radio.on_clicked(colorfunc(1,2,3))
+        self.PlotSpectro(fig,self.AxHands[1])
+        self.PlotPowerSpec(fig,self.AxHands[2])
+        self.PlotBispec(fig,self.AxHands[0])
 
         plt.tight_layout()
         plt.show()
+        return
 
+
+    def PlotGUI(self):
+    # ------------------
+    # GUI test
+    # ------------------
+        fig = plt.figure()
+
+        ax1 = plt.subplot(121)
+        ax2 = plt.subplot(222)
+        ax3 = plt.subplot(224)
+
+        # Save figure and axes with object
+        self.Figure = fig
+        self.AxHands = [ax1, ax2, ax3]
+    
+        # This is very primitive GUI stuff
+        ####
+        axcolor = [0.9, 0.9, 0.9]
+        rax1 = plt.axes([0.0, 0.0, 0.15, 0.1], facecolor=axcolor)
+        radio1 = RadioButtons(rax1, ['PiYG', 'viridis', 'gnuplot2'], active=0)
+        radio1.on_clicked(self.ChangeCMap)
+
+        rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
+        radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
+        radio2.on_clicked(self.DumFunc)
+        ####
+        
+        self.RefreshGUI()
+        return
+
+
+    def DumFunc(self,event):
+        if int(event) <= self._Nseries:
+            self.PlotSig = int(event) - 1
+        self.RefreshGUI()
+        return
+
+    def ChangeCMap(self,event):
+        self.CMap = event
+        self.RefreshGUI()
         return
 
 
@@ -741,7 +787,7 @@ class BicAn:
         qwer = messagebox.askokcancel('Question','FFT elements exceed {}! ({}) Continue?'.format(self.WarnSize,n))
         if not qwer:
             print('Operation terminated by user.')
-            self.RunBicAn = False
+            self._RunBicAn = False
         return         # Bail if that seems scary! 
 
 
@@ -765,27 +811,14 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
 # ------------------
     #plt.rcParams["font.weight"] = "bold"
     # Uncomment this for ALL bold
-
-    # plt.rcParams.update({
-    #     "font.weight": "bold",  # bold fonts
-    #     "tick.labelsize": 15,   # large tick labels
-    #     "lines.linewidth": 1,   # thick lines
-    #     "lines.color": "k",     # black lines
-    #     "grid.color": "0.5",    # gray gridlines
-    #     "grid.linestyle": "-",  # solid gridlines
-    #     "grid.linewidth": 0.5,  # thin gridlines
-    #     "savefig.dpi": 300,     # higher resolution output.
-    # })
-
+    plt.sca(ax)       # YESSSSSS!
     n = len(strings)
     fweight = 'normal'
     tickweight = 'bold'
+
     ax.set_xlabel(strings[0], fontsize=fsize, fontweight=fweight)
     if n>1:
         ax.set_ylabel(strings[1], fontsize=fsize, fontweight=fweight)
-        #ax.tick_params(labelsize=fsize, labelweight=fweight)
-        
-    plt.sca(ax)# YESSSSSS!
     plt.xticks(size=fsize, weight=tickweight)
     plt.yticks(size=fsize, weight=tickweight)
     ax.minorticks_on()
@@ -797,15 +830,14 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
             cax.xaxis.set_label_position('top') 
             cax.xaxis.tick_top()     
             cax.set_xlabel(strings[2], fontsize=fsize, fontweight=fweight)
-            #cax.tick_params(labelsize=fsize)
             plt.xticks(size=fsize, weight=tickweight)
         else:
             cax = divider.append_axes('right', size='5%', pad=0.05)
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
-            #cax.tick_params(labelsize=fsize)
             plt.yticks(size=fsize, weight=tickweight)
     cid = fig.canvas.mpl_connect('button_press_event', GetClick)
+    return
 
 
 def PlotTest(t,sig):
@@ -919,7 +951,7 @@ def TestSignal(whatsig):
         inData[2,:] = z
     elif dum == 'cross_circle':
         x,t,_  = SignalGen(fS,tend,1,22,10,0,0,0,0,1/20,noisy)
-        y,_,_  = SignalGen(fS,tend,1,45,10,0,0,0,0,1/20,noisy)
+        y,_,_  = SignalGen(fS,tend,0,0 ,0 ,1,45,10,0,1/20,noisy)
         z,_,_  = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
         inData = np.zeros( (3, len(t)) )
         inData[0,:] = x 
