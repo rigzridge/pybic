@@ -2,7 +2,7 @@
 Python-based bicoherence analysis
 
 ## The bispectrum
-$ \mathcal{B}_{xyz}(f_1,f_2) = \langle X(f_1)Y(f_2)Z^*(f_1+f_2) \rangle$, where $x$, $y$, $z$ are time series with 
+$\mathcal{B}_{xyz}(f_1,f_2) = \langle X(f_1)Y(f_2)Z^*(f_1+f_2) \rangle$, where $x$, $y$, $z$ are time series with 
 corresponding Fourier transforms $X$, $Y$, $Z$,
 and $\langle ... \rangle$ denotes averaging
 
