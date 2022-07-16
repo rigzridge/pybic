@@ -57,6 +57,16 @@
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
+# 7/16/2022 -> Tyler here, reading up on GUI for python, Tkinter is the best
+# option and can be implemented by importing tkinter alongside matplotlib. 
+# Something like figure = plt.figure(stuff) ax = figure.add_subplot(numbers) 
+# give it a type with FigureCanvasTKAgg(check documentation for options) then 
+# needs tied up with a bow using thing.get_tk_widget().pack to actually put it 
+# all together into your prompt widget, this isn't even a version history but
+# idk how to comment... anyway
+
+# tl;dr make an array or pandas data frame, feed it into tk canvas, pack it 
+# together and decide on subplot layout (rows, cols, index)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/15/2022 -> Fixed concatenation bug in ApplyZPad(), SignalGen() now outputs
 # (1,N) numpy arrays instead of (N,), and lambda has been moved out of loop 
