@@ -52,7 +52,7 @@
 # smooth    -> smooths FFT by n samples                x[default :: 1]
 # tscale    -> scale for plotting time                 [default :: 0]
 # tzero     -> initial time                            [default :: 0]
-# verbose   -> allow printing of info structure        [default :: True]
+# verbose   -> allow printing of info structure        [default :: False]
 # window    -> select window function                  x[default :: 'hann']
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -60,7 +60,9 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/15/2022 -> Fixed concatenation bug in ApplyZPad(), SignalGen() now outputs
 # (1,N) numpy arrays instead of (N,), and lambda has been moved out of loop 
-# in ApplyCWT(). Working on Colab notebook exposition.
+# in ApplyCWT(). Working on Colab notebook exposition. Switched everything to 
+# column vectors, so even my first comment today is wrong! I know it's kind of
+# brutal but it's sensible in Python. Allows x[0:n] instead of x[:,0:n] stuff!
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/14/2022 -> Working on GUI!!! Reading a bunch of Tkinter documentation and 
 # I think I know how to proceed, but gimme a few and I'll let you know. [...]
@@ -228,7 +230,7 @@ class BicAn:
     PlotSlice = 0
     PlotSig   = 0
 
-    Verbose   = True
+    Verbose   = False
     Detrend   = False
     ZPad      = False
     Cross     = False
@@ -278,7 +280,7 @@ class BicAn:
 
     @property
     def _Nseries(self): # Number of time series
-        return len(self.Raw)
+        return min(self.Raw.shape)
 
     @property
     def Samples(self): # Samples in data
@@ -334,7 +336,7 @@ class BicAn:
                     dum = 'circle' if dum == 'demo' else dum
                     if messagebox.askokcancel('Question','Run the "{}" demo?'.format(dum)):
                         sig,_,fS = TestSignal(dum)
-                        self.ParseInput(sig,{'SampRate':fS, 'ZPad':True})  
+                        self.ParseInput(sig,{'SampRate':fS})  
                 else:
                     print('Hmmm. That string isn`t supported yet... Try "demo".')   
 
@@ -344,16 +346,16 @@ class BicAn:
             
             sz = inData.shape
             # Check if 1 or 2D numpy array
-            if len(sz)<3 and isinstance(inData,type(np.array(0))):
+            if len(sz)<3 and isinstance( inData, type(np.array(0)) ):
 
                 N = max(sz)                     # Get long dimension
                 if len(sz)==1:                  # Check vector
-                    self.Raw = np.zeros((1,N))  # Initialize array
-                    self.Raw[0,:] = inData      # Place data
+                    self.Raw = np.zeros((N,1))  # Initialize array
+                    self.Raw[:,0] = inData      # Place data
 
                 elif len(sz)==2:                      # Must be 2D
-                    self.Raw = np.zeros((min(sz),N))  # Initialize
-                    if sz[0] > sz[1]:                 # Check column vector
+                    self.Raw = np.zeros(N,(min(sz)))  # Initialize
+                    if sz[1] > sz[0]:                 # Check row vector
                         inData = np.transpose(inData) # Transpose if so
 
                     self.Raw = inData                 # Boom!
@@ -423,17 +425,14 @@ class BicAn:
             if tail_error != 0:
                 # Add enough zeros to make subint evenly divide samples
 
-                dum = np.zeros((self._Nseries, self.SubInt-tail_error))
-                self.Processed = np.concatenate( (self.Raw, dum ), 1 )
-
+                dum = np.zeros((self.SubInt-tail_error, self._Nseries))
+                self.Processed = np.concatenate( (self.Raw, dum ) )
             else:
                 self.Processed = self.Raw
         else:
             # Truncate time series to fit integer number of stepped subintervals
-            samplim = self.Step* (self.Samples - self.SubInt)//self.Step + self.SubInt
-            
-            self.Processed = self.Raw[:,0:samplim]
-            #self.Processed = self.Raw[0:samplim]
+            samplim = self.Step * (self.Samples - self.SubInt) // self.Step + self.SubInt
+            self.Processed = self.Raw[0:samplim]
 
 
     def ProcessData(self):
@@ -499,11 +498,11 @@ class BicAn:
 
         if self.Detrend:
             for k in range(self._Nseries):
-                self.Processed[k,:] = ApplyDetrend(self.Processed[k,:])
+                self.Processed[:,k] = ApplyDetrend(self.Processed[:,k])
 
         # Subtract mean
         for k in range(self._Nseries):
-            self.Processed[k,:] = self.Processed[k,:] - sum(self.Processed[k,:] / len(self.Processed[k,:]) )
+            self.Processed[:,k] = self.Processed[:,k] - sum(self.Processed[:,k]) / len(self.Processed[:,k]) 
         
         # Warn prompt
         if self.Samples>self.WarnSize and self.SizeWarn:
@@ -601,7 +600,7 @@ class BicAn:
         f = self.fv/10**self.FScale
 
         for k in range(self._Nseries):
-            ax.semilogy(f,self.ft[k,:]**2,linewidth=self.LineWidth)
+            ax.semilogy(f,self.ft[:,k]**2,linewidth=self.LineWidth)
         fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
         ystr = r'$|\mathcal{%s}|^2$ [arb.]' % ('P' if self.SpecType=='stft' else 'W')
         PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None)
@@ -756,17 +755,17 @@ class BicAn:
         self.Figure = fig
         self.AxHands = [ax1, ax2, ax3]
     
-        # This is very primitive GUI stuff
-        ####
-        axcolor = [0.9, 0.9, 0.9]
-        rax1 = plt.axes([0.0, 0.0, 0.15, 0.1], facecolor=axcolor)
-        radio1 = RadioButtons(rax1, ['PiYG', 'viridis', 'gnuplot2'], active=0)
-        radio1.on_clicked(self.ChangeCMap)
+        # # This is very primitive GUI stuff
+        # ####
+        # axcolor = [0.9, 0.9, 0.9]
+        # rax1 = plt.axes([0.0, 0.0, 0.15, 0.1], facecolor=axcolor)
+        # radio1 = RadioButtons(rax1, ['PiYG', 'viridis', 'gnuplot2'], active=0)
+        # radio1.on_clicked(self.ChangeCMap)
 
-        rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
-        radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
-        radio2.on_clicked(self.DumFunc)
-        ####
+        # rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
+        # radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
+        # radio2.on_clicked(self.DumFunc)
+        # ####
         
         self.RefreshGUI()
         return
@@ -912,7 +911,7 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     z = Az*np.sin(2*np.pi*(fx*t + fy*t + dfx + dfy)) # f1 + f2
 
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
-    sig = np.reshape(sig, (1,len(sig))) # Output 1xN numpy array
+    #sig = np.reshape(sig, (1,len(sig))) # Output 1xN numpy array
     return sig,t,fS
 
 
@@ -943,25 +942,25 @@ def TestSignal(whatsig):
     elif dum == 'cross_2tone':
         x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
         y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
-        inData = np.zeros( (2, len(t)) )
-        inData[0,:] = x 
-        inData[1,:] = x + y 
+        inData = np.zeros( (len(t), 2) )
+        inData[:,0] = x 
+        inData[:,1] = x + y 
     elif dum == 'cross_3tone':
         x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
         y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
         z,_,_  = SignalGen(fS,tend,1,67,0,0,0,0,0,0,noisy)
-        inData = np.zeros( (3, len(t)) )
-        inData[0,:] = x 
-        inData[1,:] = y 
-        inData[2,:] = z
+        inData = np.zeros( (len(t), 3) )
+        inData[:,0] = x 
+        inData[:,1] = y 
+        inData[:,2] = z
     elif dum == 'cross_circle':
         x,t,_  = SignalGen(fS,tend,1,22,10,0,0,0,0,1/20,noisy)
         y,_,_  = SignalGen(fS,tend,0,0 ,0 ,1,45,10,0,1/20,noisy)
         z,_,_  = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
-        inData = np.zeros( (3, len(t)) )
-        inData[0,:] = x 
-        inData[1,:] = y 
-        inData[2,:] = z
+        inData = np.zeros( (len(t), 3) )
+        inData[:,0] = x 
+        inData[:,1] = y 
+        inData[:,2] = z
     else:
         print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(self.whatsig)) 
         inData,t,fS = SignalGen(fS,tend,1,22,0,0,0,0,0,0,0)
@@ -972,14 +971,14 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 # ------------------
 # STFT static method
 # ------------------
-    N = len(sig)
+    N = min(sig.shape)
     M = 1 + (max(sig.shape) - subint)//step
     lim  = nfreq//2                 # lim = |_ Nyquist/res _|
     time_vec = np.zeros(M)          # Time vector
-    err  = np.zeros((N,M))          # Mean information
+    err  = np.zeros((M,N))          # Mean information
     spec = np.zeros((lim,M,N),dtype=complex)      # Spectrogram
-    fft_coeffs = np.zeros((N,lim),dtype=complex)  # Coeffs for slice
-    afft = np.zeros((N,lim))        # Coeffs for slice
+    fft_coeffs = np.zeros((lim,N),dtype=complex)  # Coeffs for slice
+    afft = np.zeros((lim,N))        # Coeffs for slice
     Ntoss = 0                       # Number of removed slices
     
     win = HannWindow(nfreq)         # Apply Hann window
@@ -990,7 +989,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
         time_vec[m] = t0 + m*step/samprate
         for k in range(N):
-            Ym = sig[k, m*step : m*step + subint] # Select subinterval    
+            Ym = sig[m*step : m*step + subint, k] # Select subinterval    
             Ym = Ym[0:nfreq]            # Take only what is needed for res
             if detrend:                 # Remove linear least-squares fit
                 Ym = ApplyDetrend(Ym)
@@ -999,16 +998,16 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
             DFT = np.fft.fft(Ym)/nfreq  # Limit and normalize by vector length
 
-            fft_coeffs[k,0:lim] = DFT[0:lim]  # Get interested parties
-            dumft    = abs(fft_coeffs[k,:])       # Dummy for abs(coeffs)
-            err[k,m] = sum(dumft)/len(dumft)     # Mean of PSD slice
+            fft_coeffs[0:lim,k] = DFT[0:lim]  # Get interested parties
+            dumft    = abs(fft_coeffs[:,k])       # Dummy for abs(coeffs)
+            err[m,k] = sum(dumft)/len(dumft)     # Mean of PSD slice
 
-            if err[k,m]>=errlim:
-                fft_coeffs[k,:] = 0*fft_coeffs[k,:] # Blank if mean excessive
+            if err[m,k]>=errlim:
+                fft_coeffs[:,k] = 0*fft_coeffs[:,k] # Blank if mean excessive
                 Ntoss += 1
 
-            afft[k,:]  += dumft                   # Welch's PSD
-            spec[:,m,k] = fft_coeffs[k,:]         # Build spectrogram
+            afft[:,k]  += dumft                   # Welch's PSD
+            spec[:,m,k] = fft_coeffs[:,k]         # Build spectrogram
 
     print('\b\b\b^]\n')
     
@@ -1035,7 +1034,7 @@ def ApplyCWT(sig,samprate,sigma):
     Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
 
     for k in range(N):
-        fft_sig = np.fft.fft(sig[k,:])
+        fft_sig = np.fft.fft(sig[:,k])
         fft_sig = fft_sig[0:nyq]
 
         print('Applying CWT...      ')
