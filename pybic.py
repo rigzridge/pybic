@@ -1250,3 +1250,30 @@ def RunDemo():
     b = BicAn('circle')
 
     return b
+
+
+
+
+# All of this is my attempt at a Tkinter GUI, prob needs to be edited and def psuedocode, will
+# eed to copy the fig block for each subplot we want and index like axi where i = 1, 2, etc.
+
+# def PlotGui(data):
+#     # -------------------
+#     # Make a user interface
+#     # -------------------
+#     import tkinter as tk
+#     import matplotlib.pyplot as plt
+#     from pandas import DataFrame as df
+#     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+#     print("Include path to data file")
+#     data = input()
+#     data = df(data, columns = ['Time', 'Amplitude'])
+#     root = tk.TK()
+    
+#     fig = plt.figure() #options?
+#     ax = fig.add_subplot(221)   #think this makes a 2x2 not sure what we want
+#     scatter = FigureCanvasTKAgg(fig, root)  #just using scatter as a place holder, I know it's not actually a scatterplot
+#     df.plot(kind = 'line', figsize = (6, 6), title = "Dope GUI", legend = "Def", ax = ?)
+    
+    
+    
