@@ -354,7 +354,7 @@ class BicAn:
                     self.Raw[:,0] = inData      # Place data
 
                 elif len(sz)==2:                      # Must be 2D
-                    self.Raw = np.zeros(N,(min(sz)))  # Initialize
+                    self.Raw = np.zeros((N,min(sz)))  # Initialize
                     if sz[1] > sz[0]:                 # Check row vector
                         inData = np.transpose(inData) # Transpose if so
 
@@ -911,7 +911,7 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     z = Az*np.sin(2*np.pi*(fx*t + fy*t + dfx + dfy)) # f1 + f2
 
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
-    #sig = np.reshape(sig, (1,len(sig))) # Output 1xN numpy array
+    sig = np.reshape(sig, ( len(sig), 1 )) # Output Nx1 numpy array
     return sig,t,fS
 
 
@@ -1021,13 +1021,13 @@ def ApplyCWT(sig,samprate,sigma):
 # ------------------
 # Wavelet static method
 # ------------------
-    N,Nsig = sig.shape
+    Nsig,N = sig.shape
     nyq    = Nsig//2
 
     f0 = samprate/Nsig
     freq_vec = np.arange(nyq)*f0
     
-    acwt = np.zeros((N,nyq))
+    acwt = np.zeros((nyq,N))
     CWT  = np.zeros((nyq,nyq,N),dtype=complex)
 
     # Morlet wavelet in frequency space
@@ -1044,7 +1044,7 @@ def ApplyCWT(sig,samprate,sigma):
             dum = np.fft.ifft(fft_sig * Psi(a+1))
             CWT[a,:,k] = dum
 
-            acwt[k,a]  = sum(abs(dum)) / len(dum)
+            acwt[a,k]  = sum(abs(dum)) / len(dum)
         print('\b\b\b^]\n')
 
     time_vec = np.arange(0,Nsig,2)/samprate
