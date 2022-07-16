@@ -64,9 +64,9 @@
 # needs tied up with a bow using thing.get_tk_widget().pack to actually put it 
 # all together into your prompt widget, this isn't even a version history but
 # idk how to comment... anyway
-
 # tl;dr make an array or pandas data frame, feed it into tk canvas, pack it 
 # together and decide on subplot layout (rows, cols, index)
+# ~> WarnSize is now a private attribute; BicAn bails if inData is broken. _GR
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/15/2022 -> Fixed concatenation bug in ApplyZPad(), SignalGen() now outputs
 # (1,N) numpy arrays instead of (N,), and lambda has been moved out of loop 
@@ -194,13 +194,13 @@ class BicAn:
 # Bicoherence analysis class for DSP
     
     # Attributes
-    WarnSize  = 1024
     Date      = datetime.now()
     MaxRes    = 0
     Samples   = 0
     NFreq     = 0
 
     # Private attributes
+    _WarnSize  = 1024
     _RunBicAn  = False
     _NormToNyq = False
     _Nseries   = 1
@@ -250,21 +250,21 @@ class BicAn:
     Figure    = 0
     AxHands   = [0, 0, 0]
 
-    tv = [] # Time vector
-    fv = [] # Frequency vector
-    ff = [] # Full frequency vector
-    ft = [] # Fourier amplitudes
-    sg = [] # Spectrogram (complex)
-    cs = [] # Cross-spectrum
-    cc = [] # Cross-coherence
-    sg = [] # Coherence spectrum
-    bs = [] # Bispectrum
-    bc = [] # Bicoherence spectrum
-    bp = [] # Biphase proxy
-    bg = [] # Bispectrogram
-    er = [] # Mean & std dev of FFT
-    mb = [] # Mean b^2
-    sb = [] # Std dev of b^2
+    tv = []   # Time vector
+    fv = []   # Frequency vector
+    ff = []   # Full frequency vector
+    ft = []   # Fourier amplitudes
+    sg = []   # Spectrogram (complex)
+    cs = []   # Cross-spectrum
+    cc = []   # Cross-coherence
+    sg = []   # Coherence spectrum
+    bs = []   # Bispectrum
+    bc = []   # Bicoherence spectrum
+    bp = []   # Biphase proxy
+    bg = []   # Bispectrogram
+    er = []   # Mean & std dev of FFT
+    mb = []   # Mean b^2
+    sb = []   # Std dev of b^2
 
 
     # Methods
@@ -276,7 +276,6 @@ class BicAn:
 
         if self._RunBicAn:
             self.ProcessData()
-
         return
 
     # Dependent properties
@@ -320,7 +319,7 @@ class BicAn:
                 #self = inData 
                 self._RunBicAn = False
 
-            elif isinstance(inData,list):
+            elif isinstance(inData,type(np.array(0))):
                 # If array input, use normalized frequencies
                 self.Raw       = inData
                 self.FreqRes   = 1/self.SubInt    
@@ -351,7 +350,8 @@ class BicAn:
                     print('Hmmm. That string isn`t supported yet... Try "demo".')   
 
             else:
-                print('***WARNING*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
+                print('***ERROR*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
+                error()
         else:
             
             sz = inData.shape
@@ -484,7 +484,7 @@ class BicAn:
     # ------------------
     # STFT method
     # ------------------ 
-        if self.NFreq>self.WarnSize and self.SizeWarn:
+        if self.NFreq>self._WarnSize and self.SizeWarn:
             self.SizeWarnPrompt(self.NFreq)
 
         spec,afft,f,t,err,Ntoss = ApplySTFT(self.Processed,self.SampRate,self.SubInt,self.Step,self.NFreq,self.TZero,self.Detrend,self.ErrLim)
@@ -515,7 +515,7 @@ class BicAn:
             self.Processed[:,k] = self.Processed[:,k] - sum(self.Processed[:,k]) / len(self.Processed[:,k]) 
         
         # Warn prompt
-        if self.Samples>self.WarnSize and self.SizeWarn:
+        if self.Samples>self._WarnSize and self.SizeWarn:
             self.SizeWarnPrompt(self.Samples)
 
         CWT,acwt,f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma)
@@ -765,17 +765,17 @@ class BicAn:
         self.Figure = fig
         self.AxHands = [ax1, ax2, ax3]
     
-        # # This is very primitive GUI stuff
-        # ####
-        # axcolor = [0.9, 0.9, 0.9]
-        # rax1 = plt.axes([0.0, 0.0, 0.15, 0.1], facecolor=axcolor)
-        # radio1 = RadioButtons(rax1, ['PiYG', 'viridis', 'gnuplot2'], active=0)
-        # radio1.on_clicked(self.ChangeCMap)
+        # This is very primitive GUI stuff
+        ####
+        axcolor = [0.9, 0.9, 0.9]
+        rax1 = plt.axes([0.0, 0.0, 0.15, 0.1], facecolor=axcolor)
+        radio1 = RadioButtons(rax1, ['PiYG', 'viridis', 'gnuplot2'], active=0)
+        radio1.on_clicked(self.ChangeCMap)
 
-        # rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
-        # radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
-        # radio2.on_clicked(self.DumFunc)
-        # ####
+        rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
+        radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
+        radio2.on_clicked(self.DumFunc)
+        ####
         
         self.RefreshGUI()
         return
@@ -797,7 +797,7 @@ class BicAn:
     # ------------------
     # Prompt for CPU health
     # ------------------
-        qwer = messagebox.askokcancel('Question','FFT elements exceed {}! ({}) Continue?'.format(self.WarnSize,n))
+        qwer = messagebox.askokcancel('Question','FFT elements exceed {}! ({}) Continue?'.format(self._WarnSize,n))
         if not qwer:
             print('Operation terminated by user.')
             self._RunBicAn = False
@@ -1253,7 +1253,6 @@ def RunDemo():
 
 
 
-
 # All of this is my attempt at a Tkinter GUI, prob needs to be edited and def psuedocode, will
 # eed to copy the fig block for each subplot we want and index like axi where i = 1, 2, etc.
 
@@ -1269,11 +1268,8 @@ def RunDemo():
 #     data = input()
 #     data = df(data, columns = ['Time', 'Amplitude'])
 #     root = tk.TK()
-    
+
 #     fig = plt.figure() #options?
 #     ax = fig.add_subplot(221)   #think this makes a 2x2 not sure what we want
 #     scatter = FigureCanvasTKAgg(fig, root)  #just using scatter as a place holder, I know it's not actually a scatterplot
 #     df.plot(kind = 'line', figsize = (6, 6), title = "Dope GUI", legend = "Def", ax = ?)
-    
-    
-    
