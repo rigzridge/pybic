@@ -52,42 +52,21 @@
 # smooth    -> smooths FFT by n samples                x[default :: 1]
 # tscale    -> scale for plotting time                 [default :: 0]
 # tzero     -> initial time                            [default :: 0]
-# verbose   -> allow printing of info structure        [default :: False]
+# verbose   -> allow printing of info structure        [default :: True]
 # window    -> select window function                  x[default :: 'hann']
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
-# 7/16/2022 -> Tyler here, reading up on GUI for python, Tkinter is the best
-# option and can be implemented by importing tkinter alongside matplotlib. 
-# Something like figure = plt.figure(stuff) ax = figure.add_subplot(numbers) 
-# give it a type with FigureCanvasTKAgg(check documentation for options) then 
-# needs tied up with a bow using thing.get_tk_widget().pack to actually put it 
-# all together into your prompt widget, this isn't even a version history but
-# idk how to comment... anyway
-# tl;dr make an array or pandas data frame, feed it into tk canvas, pack it 
-# together and decide on subplot layout (rows, cols, index)
-# ~> WarnSize is now a private attribute; BicAn bails if inData is broken. _GR
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/15/2022 -> Fixed concatenation bug in ApplyZPad(), SignalGen() now outputs
-# (1,N) numpy arrays instead of (N,), and lambda has been moved out of loop 
-# in ApplyCWT(). Working on Colab notebook exposition. Switched everything to 
-# column vectors, so even my first comment today is wrong! I know it's kind of
-# brutal but it's sensible in Python. Allows x[0:n] instead of x[:,0:n] stuff!
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/14/2022 -> Working on GUI!!! Reading a bunch of Tkinter documentation and 
+# 7/14/2022 -> Working on GUI... Reading a bunch of Tkinter documentation and 
 # I think I know how to proceed, but gimme a few and I'll let you know. [...]
-# So, I think that Tkinter is the way, but I was kind of confused earlier b/c
-# I was using the built-in matplotlib widgets (which I think are back-ended 
-# with Tkinter) to switch colormaps, etc. At this point, I don't think that 
-# the extra headache -- however small -- is worth it right now, so I'll stick
-# with the widgets. We have bells now, version 2.0 can have whistles!
+# 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/13/2022 -> Added SpecToCoherence() and Coherence() methods. [...] Adding
 # support for np.loadtxt(...) stuff with a FileDialog(). Will need a try block
 # in the future, but for now it's actually best to try to force some errors!
 # I tried to get an exception with transposes of various inputs, but it seems
-# like all is well. =^o Also: ran a cross-wavelet-bicoherence analysis(!), and
-# fixed issue with TestSignal('cross_circle') that prevented viable b^2.
+# like all is well. =^o 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/12/2022 -> Figured out the weight='bold' on ticklabels in subplots! Here
 # are my notes from before it though: {Clearly there's some way to do it, but 
@@ -147,7 +126,7 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # THINGS TO DO!
-# **Swap out matplotlib widgets for full tkinter GUI =^x
+# **Swap out matplotlib widgets for full tkinter GUI
 # ** Figure out setter functions
 # ** Configure warnings
 # *_ Implement some kind of check for Raw data! Should eliminate string, etc.
@@ -171,19 +150,20 @@
 #}
 
 # Import dependencies
-import os
-import time
-import warnings
 import numpy as np
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, RadioButtons
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
-from math import isclose
+import warnings
 import tkinter as tk
-from tkinter import messagebox, filedialog, ttk
+from tkinter import messagebox, ttk
+import os
+from math import isclose
+import time
 
-# Extra, definitely-not-bug-tested stuff
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from tkinter import *
@@ -193,18 +173,17 @@ from tkinter import *
 class BicAn:
 # Bicoherence analysis class for DSP
     
-    # Attributes
+    # Properties
+    WarnSize  = 1024
     Date      = datetime.now()
     MaxRes    = 0
     Samples   = 0
     NFreq     = 0
 
-    # Private attributes
-    _WarnSize  = 1024
-    _RunBicAn  = False
-    _NormToNyq = False
-    _Nseries   = 1
-    _WinVec    = []     
+    RunBicAn  = False
+    NormToNyq = False
+    Nseries   = 1
+    WinVec    = []     
 
     Note      = ' '
     Raw       = []
@@ -238,9 +217,8 @@ class BicAn:
     LineWidth = 2
     FontSize  = 20
     PlotSlice = 0
-    PlotSig   = 0
 
-    Verbose   = False
+    Verbose   = True
     Detrend   = False
     ZPad      = False
     Cross     = False
@@ -250,21 +228,21 @@ class BicAn:
     Figure    = 0
     AxHands   = [0, 0, 0]
 
-    tv = []   # Time vector
-    fv = []   # Frequency vector
-    ff = []   # Full frequency vector
-    ft = []   # Fourier amplitudes
-    sg = []   # Spectrogram (complex)
-    cs = []   # Cross-spectrum
-    cc = []   # Cross-coherence
-    sg = []   # Coherence spectrum
-    bs = []   # Bispectrum
-    bc = []   # Bicoherence spectrum
-    bp = []   # Biphase proxy
-    bg = []   # Bispectrogram
-    er = []   # Mean & std dev of FFT
-    mb = []   # Mean b^2
-    sb = []   # Std dev of b^2
+    tv = [] # Time vector
+    fv = [] # Frequency vector
+    ff = [] # Full frequency vector
+    ft = [] # Fourier amplitudes
+    sg = [] # Spectrogram (complex)
+    cs = [] # Cross-spectrum
+    cc = [] # Cross-coherence
+    sg = [] # Coherence spectrum
+    bs = [] # Bispectrum
+    bc = [] # Bicoherence spectrum
+    bp = [] # Biphase proxy
+    bg = [] # Bispectrogram
+    er = [] # Mean & std dev of FFT
+    mb = [] # Mean b^2
+    sb = [] # Std dev of b^2
 
 
     # Methods
@@ -274,9 +252,11 @@ class BicAn:
     # ------------------ 
         self.ParseInput(inData,kwargs)
 
-        if self._RunBicAn:
+        if self.RunBicAn:
             self.ProcessData()
+
         return
+
 
     # Dependent properties
     @property
@@ -288,8 +268,8 @@ class BicAn:
         return int(self.SampRate / self.FreqRes)
 
     @property
-    def _Nseries(self): # Number of time series
-        return min(self.Raw.shape)
+    def Nseries(self): # Number of time series
+        return len(self.Raw)
 
     @property
     def Samples(self): # Samples in data
@@ -308,7 +288,7 @@ class BicAn:
     # ------------------
     # Handle inputs
     # ------------------
-        self._RunBicAn = True  
+        self.RunBicAn = True  
         print('Checking inputs...') 
 
         if len(kwargs)==0:
@@ -317,17 +297,17 @@ class BicAn:
                 # HAS BUGS!
                 print('Input is BicAn! ')
                 #self = inData 
-                self._RunBicAn = False
+                self.RunBicAn = False
 
-            elif isinstance(inData,type(np.array(0))):
+            elif isinstance(inData,list):
                 # If array input, use normalized frequencies
                 self.Raw       = inData
                 self.FreqRes   = 1/self.SubInt    
-                self._NormToNyq = True
+                self.NormToNyq = True
 
             elif isinstance(inData,str):
                 # Check string inputs
-                self._RunBicAn = False
+                self.RunBicAn = False
                 dum = inData.lower()
 
                 #### Should this be global?
@@ -336,7 +316,7 @@ class BicAn:
                     # Start getfile prompt
                     infile = FileDialog()
                     # Try comma-separated? ### BUGS!
-                    sig = np.loadtxt(infile, delimiter=',')  
+                    data = np.loadtxt(infile, delimiter=',')  
 
                     self.ParseInput(sig,{}) 
 
@@ -350,22 +330,21 @@ class BicAn:
                     print('Hmmm. That string isn`t supported yet... Try "demo".')   
 
             else:
-                print('***ERROR*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
-                error()
+                print('***WARNING*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
         else:
             
             sz = inData.shape
             # Check if 1 or 2D numpy array
-            if len(sz)<3 and isinstance( inData, type(np.array(0)) ):
+            if len(sz)<3 and isinstance(inData,type(np.array(0))):
 
                 N = max(sz)                     # Get long dimension
                 if len(sz)==1:                  # Check vector
-                    self.Raw = np.zeros((N,1))  # Initialize array
-                    self.Raw[:,0] = inData      # Place data
+                    self.Raw = np.zeros((1,N))  # Initialize array
+                    self.Raw[0,:] = inData      # Place data
 
                 elif len(sz)==2:                      # Must be 2D
-                    self.Raw = np.zeros((N,min(sz)))  # Initialize
-                    if sz[1] > sz[0]:                 # Check row vector
+                    self.Raw = np.zeros((min(sz),N))  # Initialize
+                    if sz[0] > sz[1]:                 # Check column vector
                         inData = np.transpose(inData) # Transpose if so
 
                     self.Raw = inData                 # Boom!
@@ -434,15 +413,18 @@ class BicAn:
             tail_error = self.Samples % self.SubInt
             if tail_error != 0:
                 # Add enough zeros to make subint evenly divide samples
+                
+                self.Processed = np.concatenate( self.Raw, np.zeros((self.Nseries, self.SubInt-tail_error)) )
+                #self.Processed = np.concatenate(( self.Raw, np.zeros(self.SubInt-tail_error) ))
 
-                dum = np.zeros((self.SubInt-tail_error, self._Nseries))
-                self.Processed = np.concatenate( (self.Raw, dum ) )
             else:
                 self.Processed = self.Raw
         else:
             # Truncate time series to fit integer number of stepped subintervals
-            samplim = self.Step * (self.Samples - self.SubInt) // self.Step + self.SubInt
-            self.Processed = self.Raw[0:samplim]
+            samplim = self.Step* (self.Samples - self.SubInt)//self.Step + self.SubInt
+            
+            self.Processed = self.Raw[:,0:samplim]
+            #self.Processed = self.Raw[0:samplim]
 
 
     def ProcessData(self):
@@ -484,7 +466,7 @@ class BicAn:
     # ------------------
     # STFT method
     # ------------------ 
-        if self.NFreq>self._WarnSize and self.SizeWarn:
+        if self.NFreq>self.WarnSize and self.SizeWarn:
             self.SizeWarnPrompt(self.NFreq)
 
         spec,afft,f,t,err,Ntoss = ApplySTFT(self.Processed,self.SampRate,self.SubInt,self.Step,self.NFreq,self.TZero,self.Detrend,self.ErrLim)
@@ -507,15 +489,15 @@ class BicAn:
             self.Sigma = 5*self.Samples/self.SampRate
 
         if self.Detrend:
-            for k in range(self._Nseries):
-                self.Processed[:,k] = ApplyDetrend(self.Processed[:,k])
+            for k in range(self.Nseries):
+                self.Processed[k,:] = ApplyDetrend(self.Processed[k,:])
 
         # Subtract mean
-        for k in range(self._Nseries):
-            self.Processed[:,k] = self.Processed[:,k] - sum(self.Processed[:,k]) / len(self.Processed[:,k]) 
+        for k in range(self.Nseries):
+            self.Processed[k,:] = self.Processed[k,:] - sum(self.Processed[k,:] / len(self.Processed[k,:]) )
         
         # Warn prompt
-        if self.Samples>self._WarnSize and self.SizeWarn:
+        if self.Samples>self.WarnSize and self.SizeWarn:
             self.SizeWarnPrompt(self.Samples)
 
         CWT,acwt,f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma)
@@ -531,7 +513,7 @@ class BicAn:
     # ------------------
     # Cross-spectrum/coh
     # ------------------
-        if self._Nseries!=2:
+        if self.Nseries!=2:
             print('***WARNING*** :: Cross-coherence requires exactly 2 signals!')
         else:
             cspec,crosscoh,coh = SpecToCoherence(self.sg,self.LilGuy)
@@ -549,11 +531,11 @@ class BicAn:
         if self.SpecType == 'wave':
             WTrim = 50*2
             dum = self.sg[:,WTrim:-WTrim,:] 
-        if self._Nseries==1:
+        if self.Nseries==1:
             self.BicVec = [0, 0, 0]
             b2,B = SpecToBispec(dum,self.BicVec,self.LilGuy)
         else:
-            if self._Nseries==2:
+            if self.Nseries==2:
                 self.BicVec = [0, 1, 1]
             else:
                 self.BicVec = [0, 1, 2]
@@ -581,7 +563,7 @@ class BicAn:
 
             P = np.exp( 2j*np.pi * (2*np.random.random((n,m,r)) - 1) )
 
-            if self._Nseries==1:
+            if self.Nseries==1:
                 dumspec,_ = SpecToBispec(A*P,self.BicVec,self.LilGuy)
             else:
                 dumspec,_ = SpecToCrossBispec(A*P,self.BicVec,self.LilGuy)
@@ -609,11 +591,13 @@ class BicAn:
 
         f = self.fv/10**self.FScale
 
-        for k in range(self._Nseries):
-            ax.semilogy(f,self.ft[:,k]**2,linewidth=self.LineWidth)
+        for k in range(self.Nseries):
+            ax.semilogy(f,self.ft[k,:]**2,linewidth=self.LineWidth)
         fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
         ystr = r'$|\mathcal{%s}|^2$ [arb.]' % ('P' if self.SpecType=='stft' else 'W')
-        PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None)
+
+        #PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None)
+
         ax.set_xlim(f[0], f[-1])
         #plt.grid(True)
 
@@ -640,10 +624,12 @@ class BicAn:
         t = self.tv/10**self.TScale
         f = self.fv/10**self.FScale
 
-        im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
-        PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im)
-        ax.set_xlim(t[0], t[-1])
-        ax.set_ylim(f[0], f[-1])
+        #for k in range(self.Nseries):
+        for k in range(1):
+            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,k])), cmap=self.CMap, shading='auto')
+            PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im)
+            ax.set_xlim(t[0], t[-1])
+            ax.set_ylim(f[0], f[-1])
 
         if len(args)==0:
             plt.tight_layout()
@@ -663,7 +649,7 @@ class BicAn:
 
         dum, cbarstr = self.WhichPlot()
 
-        if self._Nseries==1:
+        if self.Nseries==1:
             f = self.fv/10**self.FScale
             im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
             ax.set_ylim(f[0], f[-1]/2)
@@ -733,21 +719,31 @@ class BicAn:
     # ------------------
     # GUI test
     # ------------------ 
+        #fig = plt.figure()
         fig = self.Figure
 
-        # ax1 = self.AxHands[0]
-        # ax2 = self.AxHands[1]
-        # ax3 = self.AxHands[2]
+        # ax2 = plt.subplot(222)
+        # ax3 = plt.subplot(224)
+        # ax1 = plt.subplot(121)
+        ax1 = self.AxHands[0]
+        ax2 = self.AxHands[1]
+        ax3 = self.AxHands[2]
 
         for k in range(3):
             self.AxHands[k].clear()
-        
-        self.PlotSpectro(fig,self.AxHands[1])
-        self.PlotPowerSpec(fig,self.AxHands[2])
-        self.PlotBispec(fig,self.AxHands[0])
 
-        plt.tight_layout()
-        plt.show()
+        # for k in self.canvas.get_tk_widget().find_all():
+        #     self.canvas.get_tk_widget().delete(k)
+        
+        self.PlotSpectro(fig,ax2)
+        self.PlotPowerSpec(fig,ax3)
+        self.PlotBispec(fig,ax1)
+
+        #plt.tight_layout()
+        #plt.show()
+
+        self.canvas.draw()
+
         return
 
 
@@ -755,53 +751,81 @@ class BicAn:
     # ------------------
     # GUI test
     # ------------------
-        fig = plt.figure()
 
-        ax1 = plt.subplot(121)
-        ax2 = plt.subplot(222)
-        ax3 = plt.subplot(224)
+        self._gui = tk.Tk()
 
-        # Save figure and axes with object
+        # fig = plt.figure()
+
+        # ax2 = plt.subplot(222)
+        # ax3 = plt.subplot(224)
+        # ax1 = plt.subplot(121)
+
+        fig = Figure(figsize=(6,6))
+        ax2 = fig.add_subplot(222)
+        ax3 = fig.add_subplot(224)
+        ax1 = fig.add_subplot(121)
+
+
+        axcolor = [0.1, 0.3, 0.9]
+        # rax = plt.axes([0.025, 0.5, 0.15, 0.15], facecolor=axcolor)
+        # radio = RadioButtons(rax, ('gnuplot2', 'PiYG', 'viridis'), active=0)
+        # radio.on_clicked(self.DumFunc)
+
+        # Radiobutton(rax, text="Science",  variable=self, value=1, command=viewSelected).pack()
+        # Radiobutton(rax, text="Commerce", variable=self, value=2, command=viewSelected).pack()
+        # Radiobutton(rax, text="Arts",     variable=self, value=3, command=viewSelected).pack()
+
+
+        combax = plt.axes([0.025, 0.0, 0.15, 0.15], facecolor=axcolor)
+        combo = tk.ttk.Combobox(self._gui)
+
+        combo['values']  = (1, 2, 3, 4, 5, "Text")
+        #combo['command'] = self.DumFunc
+        combo.current(1) #set the selected item
+        #combo.on_clicked(self.DumFunc)
+        combo.pack()
+
+        button = Button(self._gui,text='turds',command=self.DumFunc)
+        button.pack()
+
+        self.Test = 'Not working...'
+
         self.Figure = fig
         self.AxHands = [ax1, ax2, ax3]
-    
-        # This is very primitive GUI stuff
-        ####
-        axcolor = [0.9, 0.9, 0.9]
-        rax1 = plt.axes([0.0, 0.0, 0.15, 0.1], facecolor=axcolor)
-        radio1 = RadioButtons(rax1, ['PiYG', 'viridis', 'gnuplot2'], active=0)
-        radio1.on_clicked(self.ChangeCMap)
 
-        rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
-        radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
-        radio2.on_clicked(self.DumFunc)
-        ####
-        
+        #ax1.plot(range(5),[2,4,5,3,1])
+
+        canvas = FigureCanvasTkAgg(fig, master=self._gui)
+        canvas.get_tk_widget().pack()
+        canvas.draw()
+
+        self.canvas = canvas
+
         self.RefreshGUI()
+
+        #plt.show()
+
         return
 
-
-    def DumFunc(self,event):
-        if int(event) <= self._Nseries:
-            self.PlotSig = int(event) - 1
+    def DumFunc(self):
+        print(self.Test)
+        self.CMap = 'gnuplot2'
         self.RefreshGUI()
+        #self.PlotSpectro()
         return
 
-    def ChangeCMap(self,event):
-        self.CMap = event
-        self.RefreshGUI()
-        return
 
 
     def SizeWarnPrompt(self,n):
     # ------------------
     # Prompt for CPU health
     # ------------------
-        qwer = messagebox.askokcancel('Question','FFT elements exceed {}! ({}) Continue?'.format(self._WarnSize,n))
+        qwer = messagebox.askokcancel('Question','FFT elements exceed {}! ({}) Continue?'.format(self.WarnSize,n))
         if not qwer:
             print('Operation terminated by user.')
-            self._RunBicAn = False
+            self.RunBicAn = False
         return         # Bail if that seems scary! 
+
 
 
 # Module methods
@@ -824,14 +848,28 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
 # ------------------
     #plt.rcParams["font.weight"] = "bold"
     # Uncomment this for ALL bold
-    plt.sca(ax)       # YESSSSSS!
+
+    # plt.rcParams.update({
+    #     "font.weight": "bold",  # bold fonts
+    #     "tick.labelsize": 15,   # large tick labels
+    #     "lines.linewidth": 1,   # thick lines
+    #     "lines.color": "k",     # black lines
+    #     "grid.color": "0.5",    # gray gridlines
+    #     "grid.linestyle": "-",  # solid gridlines
+    #     "grid.linewidth": 0.5,  # thin gridlines
+    #     "savefig.dpi": 300,     # higher resolution output.
+    # })
+
     n = len(strings)
     fweight = 'normal'
     tickweight = 'bold'
-
     ax.set_xlabel(strings[0], fontsize=fsize, fontweight=fweight)
     if n>1:
         ax.set_ylabel(strings[1], fontsize=fsize, fontweight=fweight)
+        #ax.tick_params(labelsize=fsize, labelweight=fweight)
+        
+    #plt.sca(ax)# YESSSSSS!
+
     plt.xticks(size=fsize, weight=tickweight)
     plt.yticks(size=fsize, weight=tickweight)
     ax.minorticks_on()
@@ -843,14 +881,15 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
             cax.xaxis.set_label_position('top') 
             cax.xaxis.tick_top()     
             cax.set_xlabel(strings[2], fontsize=fsize, fontweight=fweight)
+            #cax.tick_params(labelsize=fsize)
             plt.xticks(size=fsize, weight=tickweight)
         else:
             cax = divider.append_axes('right', size='5%', pad=0.05)
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
+            #cax.tick_params(labelsize=fsize)
             plt.yticks(size=fsize, weight=tickweight)
     cid = fig.canvas.mpl_connect('button_press_event', GetClick)
-    return
 
 
 def PlotTest(t,sig):
@@ -921,7 +960,6 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     z = Az*np.sin(2*np.pi*(fx*t + fy*t + dfx + dfy)) # f1 + f2
 
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
-    sig = np.reshape(sig, ( len(sig), 1 )) # Output Nx1 numpy array
     return sig,t,fS
 
 
@@ -930,7 +968,7 @@ def TestSignal(whatsig):
 # Provides FM test signal
 # ------------------
     fS   = 200
-    tend = 100
+    tend = 10
     noisy = 2
     dum = whatsig.lower()
     if dum == 'classic':
@@ -952,25 +990,25 @@ def TestSignal(whatsig):
     elif dum == 'cross_2tone':
         x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
         y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
-        inData = np.zeros( (len(t), 2) )
-        inData[:,0] = x 
-        inData[:,1] = x + y 
+        inData = np.zeros( (2, len(t)) )
+        inData[0,:] = x 
+        inData[1,:] = x + y 
     elif dum == 'cross_3tone':
         x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
         y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
         z,_,_  = SignalGen(fS,tend,1,67,0,0,0,0,0,0,noisy)
-        inData = np.zeros( (len(t), 3) )
-        inData[:,0] = x 
-        inData[:,1] = y 
-        inData[:,2] = z
+        inData = np.zeros( (3, len(t)) )
+        inData[0,:] = x 
+        inData[1,:] = y 
+        inData[2,:] = z
     elif dum == 'cross_circle':
         x,t,_  = SignalGen(fS,tend,1,22,10,0,0,0,0,1/20,noisy)
-        y,_,_  = SignalGen(fS,tend,0,0 ,0 ,1,45,10,0,1/20,noisy)
+        y,_,_  = SignalGen(fS,tend,1,45,10,0,0,0,0,1/20,noisy)
         z,_,_  = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
-        inData = np.zeros( (len(t), 3) )
-        inData[:,0] = x 
-        inData[:,1] = y 
-        inData[:,2] = z
+        inData = np.zeros( (3, len(t)) )
+        inData[0,:] = x 
+        inData[1,:] = y 
+        inData[2,:] = z
     else:
         print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(self.whatsig)) 
         inData,t,fS = SignalGen(fS,tend,1,22,0,0,0,0,0,0,0)
@@ -981,14 +1019,14 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 # ------------------
 # STFT static method
 # ------------------
-    N = min(sig.shape)
+    N = len(sig)
     M = 1 + (max(sig.shape) - subint)//step
     lim  = nfreq//2                 # lim = |_ Nyquist/res _|
     time_vec = np.zeros(M)          # Time vector
-    err  = np.zeros((M,N))          # Mean information
+    err  = np.zeros((N,M))          # Mean information
     spec = np.zeros((lim,M,N),dtype=complex)      # Spectrogram
-    fft_coeffs = np.zeros((lim,N),dtype=complex)  # Coeffs for slice
-    afft = np.zeros((lim,N))        # Coeffs for slice
+    fft_coeffs = np.zeros((N,lim),dtype=complex)  # Coeffs for slice
+    afft = np.zeros((N,lim))        # Coeffs for slice
     Ntoss = 0                       # Number of removed slices
     
     win = HannWindow(nfreq)         # Apply Hann window
@@ -999,7 +1037,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
         time_vec[m] = t0 + m*step/samprate
         for k in range(N):
-            Ym = sig[m*step : m*step + subint, k] # Select subinterval    
+            Ym = sig[k, m*step : m*step + subint] # Select subinterval    
             Ym = Ym[0:nfreq]            # Take only what is needed for res
             if detrend:                 # Remove linear least-squares fit
                 Ym = ApplyDetrend(Ym)
@@ -1008,16 +1046,16 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
             DFT = np.fft.fft(Ym)/nfreq  # Limit and normalize by vector length
 
-            fft_coeffs[0:lim,k] = DFT[0:lim]  # Get interested parties
-            dumft    = abs(fft_coeffs[:,k])       # Dummy for abs(coeffs)
-            err[m,k] = sum(dumft)/len(dumft)     # Mean of PSD slice
+            fft_coeffs[k,0:lim] = DFT[0:lim]  # Get interested parties
+            dumft    = abs(fft_coeffs[k,:])       # Dummy for abs(coeffs)
+            err[k,m] = sum(dumft)/len(dumft)     # Mean of PSD slice
 
-            if err[m,k]>=errlim:
-                fft_coeffs[:,k] = 0*fft_coeffs[:,k] # Blank if mean excessive
+            if err[k,m]>=errlim:
+                fft_coeffs[k,:] = 0*fft_coeffs[k,:] # Blank if mean excessive
                 Ntoss += 1
 
-            afft[:,k]  += dumft                   # Welch's PSD
-            spec[:,m,k] = fft_coeffs[:,k]         # Build spectrogram
+            afft[k,:]  += dumft                   # Welch's PSD
+            spec[:,m,k] = fft_coeffs[k,:]         # Build spectrogram
 
     print('\b\b\b^]\n')
     
@@ -1031,21 +1069,21 @@ def ApplyCWT(sig,samprate,sigma):
 # ------------------
 # Wavelet static method
 # ------------------
-    Nsig,N = sig.shape
+    N,Nsig = sig.shape
     nyq    = Nsig//2
 
     f0 = samprate/Nsig
     freq_vec = np.arange(nyq)*f0
     
-    acwt = np.zeros((nyq,N))
+    acwt = np.zeros((N,nyq))
     CWT  = np.zeros((nyq,nyq,N),dtype=complex)
 
-    # Morlet wavelet in frequency space
-    Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
-
     for k in range(N):
-        fft_sig = np.fft.fft(sig[:,k])
+        fft_sig = np.fft.fft(sig[k,:])
         fft_sig = fft_sig[0:nyq]
+
+        # Morlet wavelet in frequency space
+        Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
 
         print('Applying CWT...      ')
         for a in range(nyq):
@@ -1054,7 +1092,7 @@ def ApplyCWT(sig,samprate,sigma):
             dum = np.fft.ifft(fft_sig * Psi(a+1))
             CWT[a,:,k] = dum
 
-            acwt[a,k]  = sum(abs(dum)) / len(dum)
+            acwt[k,a]  = sum(abs(dum)) / len(dum)
         print('\b\b\b^]\n')
 
     time_vec = np.arange(0,Nsig,2)/samprate
@@ -1250,26 +1288,3 @@ def RunDemo():
     b = BicAn('circle')
 
     return b
-
-
-
-# All of this is my attempt at a Tkinter GUI, prob needs to be edited and def psuedocode, will
-# eed to copy the fig block for each subplot we want and index like axi where i = 1, 2, etc.
-
-# def PlotGui(data):
-#     # -------------------
-#     # Make a user interface
-#     # -------------------
-#     import tkinter as tk
-#     import matplotlib.pyplot as plt
-#     from pandas import DataFrame as df
-#     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-#     print("Include path to data file")
-#     data = input()
-#     data = df(data, columns = ['Time', 'Amplitude'])
-#     root = tk.TK()
-
-#     fig = plt.figure() #options?
-#     ax = fig.add_subplot(221)   #think this makes a 2x2 not sure what we want
-#     scatter = FigureCanvasTKAgg(fig, root)  #just using scatter as a place holder, I know it's not actually a scatterplot
-#     df.plot(kind = 'line', figsize = (6, 6), title = "Dope GUI", legend = "Def", ax = ?)
