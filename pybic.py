@@ -57,6 +57,11 @@
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/17/2022 -> Added CalcMean() button to emulate Matlab version; trying to 
+# fix the issue with colorbar overplots! [...] Fixed with NewGUICax flag. 
+# [...] Added PlotType radiobutton, and reverted SignalGen() output. _GR
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/16/2022 -> Tyler here, reading up on GUI for python, Tkinter is the best
 # option and can be implemented by importing tkinter alongside matplotlib. 
 # Something like figure = plt.figure(stuff) ax = figure.add_subplot(numbers) 
@@ -66,7 +71,12 @@
 # idk how to comment... anyway
 # tl;dr make an array or pandas data frame, feed it into tk canvas, pack it 
 # together and decide on subplot layout (rows, cols, index)
-# ~> WarnSize is now a private attribute; BicAn bails if inData is broken. _GR
+# [...] Going to create a branch for Tkinter GUI. I resurrected the glitchy 
+# code I'd tested a few days ago (7/14) and went from there. Comboboxes are 
+# pretty sweet for colormaps (looking at you, BicAn 1.0!), so the switch to 
+# Tkinter is probably worth it. The "postcommand" callback for comboboxes 
+# seems promising to limit what options are given in the drop-down. Also,
+# redundancy in PlotLabels() was fixed with a ternary. _GR
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/15/2022 -> Fixed concatenation bug in ApplyZPad(), SignalGen() now outputs
 # (1,N) numpy arrays instead of (N,), and lambda has been moved out of loop 
@@ -147,10 +157,12 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # THINGS TO DO!
-# **Swap out matplotlib widgets for full tkinter GUI =^x
+# ** Swap out matplotlib widgets for full tkinter GUI =^x
 # ** Figure out setter functions
 # ** Configure warnings
-# *_ Implement some kind of check for Raw data! Should eliminate string, etc.
+# __ Implement some kind of check for Raw data! Should eliminate string, etc.
+# *_ Fix colorbar axes overplotting each refresh
+# ** Add buttons and callbacks from Matlab
 
 # Methods left:
 #{
@@ -158,14 +170,13 @@
 # ...ProcessData
 
 # (2) Extra but nice
-# SpecToCoherence
-# Coherence
 # PlotPointOut
+
 
 # (3) More to learn about Python...
 # SwitchPlot
 # ...PlotGUI
-# RefreshGUI
+# ...RefreshGUI
 # MakeMovie
 # etc.
 #}
@@ -248,7 +259,8 @@ class BicAn:
     TZero     = 0
 
     Figure    = 0
-    AxHands   = [0, 0, 0]
+    AxHands   = [0,0,0]
+    CaxHands  = [None,None]
 
     tv = []   # Time vector
     fv = []   # Frequency vector
@@ -611,9 +623,10 @@ class BicAn:
 
         for k in range(self._Nseries):
             ax.semilogy(f,self.ft[:,k]**2,linewidth=self.LineWidth)
+
         fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
         ystr = r'$|\mathcal{%s}|^2$ [arb.]' % ('P' if self.SpecType=='stft' else 'W')
-        PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None)
+        PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
         ax.set_xlim(f[0], f[-1])
         #plt.grid(True)
 
@@ -629,9 +642,11 @@ class BicAn:
     # ------------------
         if len(args)==0:
             fig, ax = plt.subplots()
+            cax = None
         else:
             fig = args[0]
             ax  = args[1]
+            cax = self.CaxHands[1]
 
         tstr = r'Time [%ss]' % (ScaleToString(self.TScale))
         fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
@@ -641,7 +656,9 @@ class BicAn:
         f = self.fv/10**self.FScale
 
         im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
-        PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im)
+        cax = PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
+        if self.NewGUICax:
+            self.CaxHands[1] = cax
         ax.set_xlim(t[0], t[-1])
         ax.set_ylim(f[0], f[-1])
 
@@ -657,9 +674,11 @@ class BicAn:
     # ------------------
         if len(args)==0:
             fig, ax = plt.subplots()
+            cax = None
         else:
             fig = args[0]
             ax  = args[1]
+            cax = self.CaxHands[0]
 
         dum, cbarstr = self.WhichPlot()
 
@@ -679,7 +698,9 @@ class BicAn:
         
         fstr1 = r'$f_1$ [%sHz]' % (ScaleToString(self.FScale))
         fstr2 = r'$f_2$ [%sHz]' % (ScaleToString(self.FScale))
-        PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im)
+        cax = PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
+        if self.NewGUICax:
+            self.CaxHands[0] = cax
         ax.set_xlim(f[0], f[-1])
 
         if len(args)==0:
@@ -742,12 +763,13 @@ class BicAn:
         for k in range(3):
             self.AxHands[k].clear()
         
-        self.PlotSpectro(fig,self.AxHands[1])
-        self.PlotPowerSpec(fig,self.AxHands[2])
         self.PlotBispec(fig,self.AxHands[0])
+        self.PlotSpectro(fig,self.AxHands[1])
+        self.PlotPowerSpec(fig,self.AxHands[2])       
 
         plt.tight_layout()
         plt.show()
+        self.NewGUICax = False
         return
 
 
@@ -775,8 +797,13 @@ class BicAn:
         rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
         radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
         radio2.on_clicked(self.DumFunc)
+
+        rax3 = plt.axes([0.0, 0.8, 0.15, 0.2], facecolor=axcolor)
+        radio3 = RadioButtons(rax3, ['bicoh', 'abs', 'real', 'imag', 'angle', 'mean', 'std'], active=0)
+        radio3.on_clicked(self.ChangeType)
         ####
         
+        self.NewGUICax = True
         self.RefreshGUI()
         return
 
@@ -789,6 +816,11 @@ class BicAn:
 
     def ChangeCMap(self,event):
         self.CMap = event
+        self.RefreshGUI()
+        return
+
+    def ChangeType(self,event):
+        self.PlotType = event
         self.RefreshGUI()
         return
 
@@ -818,7 +850,7 @@ def FileDialog():
     return ans
 
 
-def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
+def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
 # ------------------
 # Convenience function
 # ------------------
@@ -836,21 +868,24 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im):
     plt.yticks(size=fsize, weight=tickweight)
     ax.minorticks_on()
     if n>2:
-        divider = make_axes_locatable(ax)
+        if cax is None:
+            divider = make_axes_locatable(ax)
+            cbarloc = 'top' if cbarNorth else 'right'
+            cax = divider.append_axes(cbarloc, size='5%', pad=0.05)
+        else:
+            cax.clear()
         if cbarNorth:
-            cax = divider.append_axes('top', size='5%', pad=0.05)
             fig.colorbar(im, cax=cax, orientation='horizontal')   
             cax.xaxis.set_label_position('top') 
             cax.xaxis.tick_top()     
             cax.set_xlabel(strings[2], fontsize=fsize, fontweight=fweight)
             plt.xticks(size=fsize, weight=tickweight)
         else:
-            cax = divider.append_axes('right', size='5%', pad=0.05)
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
             plt.yticks(size=fsize, weight=tickweight)
     cid = fig.canvas.mpl_connect('button_press_event', GetClick)
-    return
+    return cax
 
 
 def PlotTest(t,sig):
@@ -863,7 +898,7 @@ def PlotTest(t,sig):
 
     fsize = 14
     cbarNorth = False
-    PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,ax,None)
+    PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,ax,None,None)
 
     plt.tight_layout()
     plt.show()
@@ -882,7 +917,7 @@ def ImageTest(t,f,dats):
     fsize = 14
     fweight = 'normal'
     cbarNorth = False
-    PlotLabels(fig,['$t$ [s]','$f$ [Hz]','$b^2(f_1,f_2)$'],fsize,cbarNorth,ax,im)
+    PlotLabels(fig,['$t$ [s]','$f$ [Hz]','$b^2(f_1,f_2)$'],fsize,cbarNorth,ax,im,None)
 
     plt.tight_layout()
     plt.show()
@@ -921,7 +956,7 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     z = Az*np.sin(2*np.pi*(fx*t + fy*t + dfx + dfy)) # f1 + f2
 
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
-    sig = np.reshape(sig, ( len(sig), 1 )) # Output Nx1 numpy array
+    #sig = np.reshape(sig, ( len(sig), 1 )) # Output Nx1 numpy array
     return sig,t,fS
 
 
@@ -969,7 +1004,7 @@ def TestSignal(whatsig):
         z,_,_  = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
         inData = np.zeros( (len(t), 3) )
         inData[:,0] = x 
-        inData[:,1] = y 
+        inData[:,1] = y
         inData[:,2] = z
     else:
         print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(self.whatsig)) 
