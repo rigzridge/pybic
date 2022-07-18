@@ -57,6 +57,10 @@
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/17/2022 -> Added CalcMean() button to emulate Matlab version; trying to 
+# fix the issue with colorbar overplots! Fixed with NewGUICax flag. _GR
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/16/2022 -> Tyler here, reading up on GUI for python, Tkinter is the best
 # option and can be implemented by importing tkinter alongside matplotlib. 
 # Something like figure = plt.figure(stuff) ax = figure.add_subplot(numbers) 
@@ -67,7 +71,7 @@
 # tl;dr make an array or pandas data frame, feed it into tk canvas, pack it 
 # together and decide on subplot layout (rows, cols, index)
 # ~> WarnSize is now a private attribute; BicAn bails if inData is broken. _GR
-# ~> Going to create a branch for the Tkinter GUI. I resurrected the glitchy 
+# [...] Going to create a branch for Tkinter GUI. I resurrected the glitchy 
 # code I'd tested a few days ago (7/14) and went from there. Comboboxes are 
 # pretty sweet for colormaps (looking at you, BicAn 1.0!), so the switch to 
 # Tkinter is probably worth it. The "postcommand" callback for comboboxes 
@@ -256,8 +260,8 @@ class BicAn:
     TZero     = 0
 
     Figure    = 0
-    AxHands   = [0, 0, 0]
-    CaxHands  = [0, 0, 0]
+    AxHands   = [0,0,0]
+    CaxHands  = [None,None]
 
     tv = []   # Time vector
     fv = []   # Frequency vector
@@ -620,9 +624,10 @@ class BicAn:
 
         for k in range(self._Nseries):
             ax.semilogy(f,self.ft[:,k]**2,linewidth=self.LineWidth)
+
         fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
         ystr = r'$|\mathcal{%s}|^2$ [arb.]' % ('P' if self.SpecType=='stft' else 'W')
-        _ = PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
+        PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
         ax.set_xlim(f[0], f[-1])
         #plt.grid(True)
 
@@ -638,9 +643,11 @@ class BicAn:
     # ------------------
         if len(args)==0:
             fig, ax = plt.subplots()
+            cax = None
         else:
             fig = args[0]
             ax  = args[1]
+            cax = self.CaxHands[1]
 
         tstr = r'Time [%ss]' % (ScaleToString(self.TScale))
         fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
@@ -650,9 +657,12 @@ class BicAn:
         f = self.fv/10**self.FScale
 
         im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
-        _ = PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im,None)
+        cax = PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
         ax.set_xlim(t[0], t[-1])
         ax.set_ylim(f[0], f[-1])
+
+        if self.NewGUICax:
+            self.CaxHands[1] = cax
 
         if len(args)==0:
             plt.tight_layout()
@@ -666,9 +676,11 @@ class BicAn:
     # ------------------
         if len(args)==0:
             fig, ax = plt.subplots()
+            cax = None
         else:
             fig = args[0]
             ax  = args[1]
+            cax = self.CaxHands[0]
 
         dum, cbarstr = self.WhichPlot()
 
@@ -680,7 +692,6 @@ class BicAn:
             # Draw triangle
             ax.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.5,0.5,0.5], linewidth=2.5)
             ax.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.5,0.5,0.5], linewidth=2.5)
-
         else:
             f = self.ff/10**self.FScale
             im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
@@ -688,7 +699,11 @@ class BicAn:
         
         fstr1 = r'$f_1$ [%sHz]' % (ScaleToString(self.FScale))
         fstr2 = r'$f_2$ [%sHz]' % (ScaleToString(self.FScale))
-        _ = PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im,None)
+        cax = PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
+
+        if self.NewGUICax:
+            self.CaxHands[0] = cax
+
         ax.set_xlim(f[0], f[-1])
 
         if len(args)==0:
@@ -747,13 +762,14 @@ class BicAn:
         for k in range(3):
             self.AxHands[k].clear()
         
+        self.PlotBispec(fig,self.AxHands[0])
         self.PlotSpectro(fig,self.AxHands[1])
         self.PlotPowerSpec(fig,self.AxHands[2])
-        self.PlotBispec(fig,self.AxHands[0])
 
         plt.tight_layout()
 
         self.canvas.draw()
+        self.NewGUICax = False
 
         return
 
@@ -788,14 +804,20 @@ class BicAn:
         self.combo2 = combo2
 
         # Random button
-        button = tk.Button(self._gui,text='Bet you won`t!',command=self.DumFunc)
-        button.pack()
-        self.button = button
+        button1 = tk.Button(self._gui, text='Bet you won`t!', command=self.DumFunc)
+        button1.pack()
+        self.button1 = button1
+
+        # CalcMean
+        button2 = tk.Button(self._gui, text='CalcMean()', command=self.CalcMeanButton)
+        button2.pack()
+        self.button2 = button2
 
         # Save figure and axes with object
-        self.Figure = fig
-        self.AxHands = [ax1, ax2, ax3]
-    
+        self.Figure   = fig
+        self.AxHands  = [ax1, ax2, ax3]
+        self.CaxHands = [None, None]
+
         # Place figure onto canvas
         canvas = FigureCanvasTkAgg(fig, master=self._gui)
         canvas.get_tk_widget().pack()
@@ -804,6 +826,9 @@ class BicAn:
         canvas.draw()
         self.canvas = canvas
         
+        # Rough and tumble solution
+        self.NewGUICax = True
+
         # Plot data!
         self.RefreshGUI()
         return
@@ -821,6 +846,11 @@ class BicAn:
 
     def ChangeType(self,event):
         self.PlotType = self.combo2.get()
+        self.RefreshGUI()
+        return
+
+    def CalcMeanButton(self):
+        self.CalcMean(10)
         self.RefreshGUI()
         return
 
@@ -871,8 +901,8 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
     ax.tick_params(labelsize=fsize)
     ax.minorticks_on()
     if n>2:
-        divider = make_axes_locatable(ax)
         if cax is None:
+            divider = make_axes_locatable(ax)
             cbarloc = 'top' if cbarNorth else 'right'
             cax = divider.append_axes(cbarloc, size='5%', pad=0.05)
         else:
@@ -903,7 +933,7 @@ def PlotTest(t,sig):
 
     fsize = 14
     cbarNorth = False
-    _ = PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,ax,None,None)
+    PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,ax,None,None)
 
     plt.tight_layout()
     plt.show()
@@ -922,7 +952,7 @@ def ImageTest(t,f,dats):
     fsize = 14
     fweight = 'normal'
     cbarNorth = False
-    _ = PlotLabels(fig,['$t$ [s]','$f$ [Hz]','$b^2(f_1,f_2)$'],fsize,cbarNorth,ax,im,None)
+    PlotLabels(fig,['$t$ [s]','$f$ [Hz]','$b^2(f_1,f_2)$'],fsize,cbarNorth,ax,im,None)
 
     plt.tight_layout()
     plt.show()
@@ -970,7 +1000,7 @@ def TestSignal(whatsig):
 # Provides FM test signal
 # ------------------
     fS   = 200
-    tend = 100
+    tend = 10
     noisy = 2
     dum = whatsig.lower()
     if dum == 'classic':
