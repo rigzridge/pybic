@@ -59,7 +59,8 @@
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/17/2022 -> Added CalcMean() button to emulate Matlab version; trying to 
-# fix the issue with colorbar overplots! Fixed with NewGUICax flag. _GR
+# fix the issue with colorbar overplots! [...] Fixed with NewGUICax flag. 
+# [...] Added PlotType radiobutton, and reverted SignalGen() output. _GR
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/16/2022 -> Tyler here, reading up on GUI for python, Tkinter is the best
 # option and can be implemented by importing tkinter alongside matplotlib. 
@@ -70,7 +71,6 @@
 # idk how to comment... anyway
 # tl;dr make an array or pandas data frame, feed it into tk canvas, pack it 
 # together and decide on subplot layout (rows, cols, index)
-# ~> WarnSize is now a private attribute; BicAn bails if inData is broken. _GR
 # [...] Going to create a branch for Tkinter GUI. I resurrected the glitchy 
 # code I'd tested a few days ago (7/14) and went from there. Comboboxes are 
 # pretty sweet for colormaps (looking at you, BicAn 1.0!), so the switch to 
@@ -157,11 +157,11 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # THINGS TO DO!
-# **Swap out matplotlib widgets for full tkinter GUI =^x
+# ** Swap out matplotlib widgets for full tkinter GUI =^x
 # ** Figure out setter functions
 # ** Configure warnings
-# *_ Implement some kind of check for Raw data! Should eliminate string, etc.
-# ** Fix colorbar axes overplotting each refresh
+# __ Implement some kind of check for Raw data! Should eliminate string, etc.
+# *_ Fix colorbar axes overplotting each refresh
 # ** Add buttons and callbacks from Matlab
 
 # Methods left:
@@ -170,14 +170,13 @@
 # ...ProcessData
 
 # (2) Extra but nice
-# SpecToCoherence
-# Coherence
 # PlotPointOut
+
 
 # (3) More to learn about Python...
 # SwitchPlot
 # ...PlotGUI
-# RefreshGUI
+# ...RefreshGUI
 # MakeMovie
 # etc.
 #}
@@ -199,6 +198,7 @@ from tkinter import messagebox, filedialog, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from tkinter import *
+import pandas as pd
 
 # Define classes for bispec script
 
@@ -262,6 +262,7 @@ class BicAn:
     Figure    = 0
     AxHands   = [0,0,0]
     CaxHands  = [None,None]
+    NewGUICax = False
 
     tv = []   # Time vector
     fv = []   # Frequency vector
@@ -349,7 +350,10 @@ class BicAn:
                     # Start getfile prompt
                     infile = FileDialog()
                     # Try comma-separated? ### BUGS!
-                    sig = np.loadtxt(infile, delimiter=',')  
+                    #sig = np.loadtxt(infile, delimiter=',') #old method
+                    sig = pd.read_csv(infile, sep=r'\s*(?:\||\#|\,)\s*', skiprows=0, dtype = 'float', engine='python') #requires csv files   #as is requires a hard coded number of rows to skip, looking for solutions to auto detect
+                    cols = sig.columns
+                    sig = sig[cols[1]]  #should have read in a file and separated every type of delimiter and passed the second column (assuming thats data)
 
                     self.ParseInput(sig,{}) 
 
@@ -364,7 +368,7 @@ class BicAn:
 
             else:
                 print('***ERROR*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
-                error()
+                np.error()
         else:
             
             sz = inData.shape
@@ -384,7 +388,7 @@ class BicAn:
                     self.Raw = inData                 # Boom!
 
             else:
-                error()
+                np.error()
 
             for key, val in kwargs.items():          # Loop through all keyword : value pairs
 
@@ -658,11 +662,10 @@ class BicAn:
 
         im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
         cax = PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
-        ax.set_xlim(t[0], t[-1])
-        ax.set_ylim(f[0], f[-1])
-
         if self.NewGUICax:
             self.CaxHands[1] = cax
+        ax.set_xlim(t[0], t[-1])
+        ax.set_ylim(f[0], f[-1])
 
         if len(args)==0:
             plt.tight_layout()
@@ -692,6 +695,7 @@ class BicAn:
             # Draw triangle
             ax.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.5,0.5,0.5], linewidth=2.5)
             ax.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.5,0.5,0.5], linewidth=2.5)
+
         else:
             f = self.ff/10**self.FScale
             im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
@@ -700,10 +704,8 @@ class BicAn:
         fstr1 = r'$f_1$ [%sHz]' % (ScaleToString(self.FScale))
         fstr2 = r'$f_2$ [%sHz]' % (ScaleToString(self.FScale))
         cax = PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
-
         if self.NewGUICax:
             self.CaxHands[0] = cax
-
         ax.set_xlim(f[0], f[-1])
 
         if len(args)==0:
@@ -759,18 +761,20 @@ class BicAn:
     # ------------------ 
         fig = self.Figure
 
+        # ax1 = self.AxHands[0]
+        # ax2 = self.AxHands[1]
+        # ax3 = self.AxHands[2]
+
         for k in range(3):
             self.AxHands[k].clear()
         
         self.PlotBispec(fig,self.AxHands[0])
         self.PlotSpectro(fig,self.AxHands[1])
-        self.PlotPowerSpec(fig,self.AxHands[2])
+        self.PlotPowerSpec(fig,self.AxHands[2])       
 
         plt.tight_layout()
-
-        self.canvas.draw()
+        plt.show()
         self.NewGUICax = False
-
         return
 
 
@@ -778,79 +782,50 @@ class BicAn:
     # ------------------
     # GUI test
     # ------------------
-        # Set root window
-        self._gui = tk.Tk()
+        fig = plt.figure()
 
-        # Intialize figure and axes
-        fig = Figure(figsize=(6,6))
-        ax1 = fig.add_subplot(121)
-        ax2 = fig.add_subplot(222)
-        ax3 = fig.add_subplot(224)
-
-        # Colormap combobox
-        combovals1 = ['gnuplot2', 'PiYG', 'plasma', 'viridis']
-        combo1 = ttk.Combobox(self._gui, values=combovals1, state='readonly')
-        combo1.set(self.CMap)
-        combo1.bind('<<ComboboxSelected>>', self.ChangeCMap)
-        combo1.pack()
-        self.combo1 = combo1
-
-        # Plottable combobox
-        combovals2 = ['bicoh', 'abs', 'real', 'imag', 'angle', 'mean', 'std']
-        combo2 = ttk.Combobox(self._gui, values=combovals2, state='readonly')
-        combo2.set(self.PlotType)
-        combo2.bind('<<ComboboxSelected>>', self.ChangeType)
-        combo2.pack()
-        self.combo2 = combo2
-
-        # Random button
-        button1 = tk.Button(self._gui, text='Bet you won`t!', command=self.DumFunc)
-        button1.pack()
-        self.button1 = button1
-
-        # CalcMean
-        button2 = tk.Button(self._gui, text='CalcMean()', command=self.CalcMeanButton)
-        button2.pack()
-        self.button2 = button2
+        ax1 = plt.subplot(121)
+        ax2 = plt.subplot(222)
+        ax3 = plt.subplot(224)
 
         # Save figure and axes with object
-        self.Figure   = fig
-        self.AxHands  = [ax1, ax2, ax3]
-        self.CaxHands = [None, None]
+        self.Figure = fig
+        self.AxHands = [ax1, ax2, ax3]
+    
+        # This is very primitive GUI stuff
+        ####
+        axcolor = [0.9, 0.9, 0.9]
+        rax1 = plt.axes([0.0, 0.0, 0.15, 0.1], facecolor=axcolor)
+        radio1 = RadioButtons(rax1, ['PiYG', 'viridis', 'gnuplot2'], active=0)
+        radio1.on_clicked(self.ChangeCMap)
 
-        # Place figure onto canvas
-        canvas = FigureCanvasTkAgg(fig, master=self._gui)
-        canvas.get_tk_widget().pack()
+        rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
+        radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
+        radio2.on_clicked(self.DumFunc)
 
-        # Substitute canvas.draw() for plt.show()
-        canvas.draw()
-        self.canvas = canvas
+        rax3 = plt.axes([0.0, 0.8, 0.15, 0.2], facecolor=axcolor)
+        radio3 = RadioButtons(rax3, ['bicoh', 'abs', 'real', 'imag', 'angle', 'mean', 'std'], active=0)
+        radio3.on_clicked(self.ChangeType)
+        ####
         
-        # Rough and tumble solution
         self.NewGUICax = True
-
-        # Plot data!
         self.RefreshGUI()
         return
 
 
-    def DumFunc(self):
-        print( 'Boom!' )
+    def DumFunc(self,event):
+        if int(event) <= self._Nseries:
+            self.PlotSig = int(event) - 1
         self.RefreshGUI()
         return
 
     def ChangeCMap(self,event):
-        self.CMap = self.combo1.get()
+        self.CMap = event
         self.RefreshGUI()
         return
 
     def ChangeType(self,event):
-        self.PlotType = self.combo2.get()
-        self.RefreshGUI()
-        return
-
-    def CalcMeanButton(self):
-        self.CalcMean(10)
+        self.PlotType = event
         self.RefreshGUI()
         return
 
@@ -884,11 +859,9 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
 # ------------------
 # Convenience function
 # ------------------
-    #plt.rcParams["font.weight"] = "bold"
+    plt.rcParams["font.weight"] = "bold"
     # Uncomment this for ALL bold
-
-    #plt.sca(ax)       # YESSSSSS!
-
+    plt.sca(ax)       # YESSSSSS!
     n = len(strings)
     fweight = 'normal'
     tickweight = 'bold'
@@ -896,9 +869,8 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
     ax.set_xlabel(strings[0], fontsize=fsize, fontweight=fweight)
     if n>1:
         ax.set_ylabel(strings[1], fontsize=fsize, fontweight=fweight)
-    #plt.xticks(size=fsize, weight=tickweight)
-    #plt.yticks(size=fsize, weight=tickweight)
-    ax.tick_params(labelsize=fsize)
+    plt.xticks(size=fsize, weight=tickweight)
+    plt.yticks(size=fsize, weight=tickweight)
     ax.minorticks_on()
     if n>2:
         if cax is None:
@@ -912,13 +884,11 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
             cax.xaxis.set_label_position('top') 
             cax.xaxis.tick_top()     
             cax.set_xlabel(strings[2], fontsize=fsize, fontweight=fweight)
-            #plt.xticks(size=fsize, weight=tickweight)
-            cax.tick_params(labelsize=fsize)
+            plt.xticks(size=fsize, weight=tickweight)
         else:
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
-            #plt.yticks(size=fsize, weight=tickweight)
-            cax.tick_params(labelsize=fsize)
+            plt.yticks(size=fsize, weight=tickweight)
     cid = fig.canvas.mpl_connect('button_press_event', GetClick)
     return cax
 
@@ -991,16 +961,16 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     z = Az*np.sin(2*np.pi*(fx*t + fy*t + dfx + dfy)) # f1 + f2
 
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
-    sig = np.reshape(sig, ( len(sig), 1 )) # Output Nx1 numpy array
+    #sig = np.reshape(sig, ( len(sig), 1 )) # Output Nx1 numpy array
     return sig,t,fS
 
 
-def TestSignal(whatsig):
+def TestSignal(self,whatsig):
 # ------------------
 # Provides FM test signal
 # ------------------
     fS   = 200
-    tend = 10
+    tend = 100
     noisy = 2
     dum = whatsig.lower()
     if dum == 'classic':
@@ -1039,7 +1009,7 @@ def TestSignal(whatsig):
         z,_,_  = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
         inData = np.zeros( (len(t), 3) )
         inData[:,0] = x 
-        inData[:,1] = y 
+        inData[:,1] = y
         inData[:,2] = z
     else:
         print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(self.whatsig)) 
@@ -1069,7 +1039,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
         time_vec[m] = t0 + m*step/samprate
         for k in range(N):
-            Ym = sig[m*step : m*step + subint, k] # Select subinterval    
+            Ym = sig[m*step : m*step + subint] # Select subinterval    
             Ym = Ym[0:nfreq]            # Take only what is needed for res
             if detrend:                 # Remove linear least-squares fit
                 Ym = ApplyDetrend(Ym)
@@ -1320,3 +1290,109 @@ def RunDemo():
     b = BicAn('circle')
 
     return b
+
+def PlotPointOut(bic,X,Y):
+        # ------------------
+        # Plot value of b^2 over time
+        # ------------------
+            fig = plt.fig()
+            
+            fLocX = X
+            fLocY = Y
+            
+            [ystr] = bic.WhichPlot
+            
+            dum = bic.fv/10^bic.FScale
+            if bic.Nseries>1:
+                dum = bic.ff/10^bic.FScale
+                X = X - (np.length(bic.fv)-1)
+                Y = Y - (np.length(bic.fv)-1)
+
+            if bic.PlotType == 'bicoh':
+                
+                Ntrials = 2000; 
+                g = np.zeros(1,Ntrials)
+                xstr = print('(%3.1f,%3.1f) %sHz',dum( fLocX(1) ),dum( fLocY(1) ),bic.ScaleToString(bic.FScale))
+                
+                print('Calculating distribution for %s...      ',xstr)  
+                for k in range(Ntrials):
+                    LoadBar(k,Ntrials)
+                    g=g(k)
+                    [g] = bic.GetBispec(bic.sg,bic.BicVec,bic.LilGuy,Y(1),X(1),True)
+                print('\b\b^]\n')  
+                
+                # Limit b^2, create vector, and produce histogram 
+                b2lim = 0.5
+                b2vec = np.linspace(0,b2lim,1000)
+                cnt = np.hist(g,b2vec)
+
+                # Integrate count
+                intcnt = sum(cnt)*(b2vec(2)-b2vec(1))
+                # exp dist -> (1/m)exp(-x/m)
+                m = np.mean(g)
+                plt.plot(b2vec,np.smooth(cnt/intcnt,10),'linewidth',bic.LineWidth,'color',bic.LineColor[110,:],'marker','x','linestyle','none')
+                plt.show()
+                # More accurate distibution... Just more complicated! (Get to it later...)
+                #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',bic.LineWidth,'color','red'); 
+                plt.plot(b2vec,(1/m)*np.exp(-b2vec/m),'linewidth',bic.LineWidth,'color','red')
+
+                bic.PlotLabels((['b^2',xstr],'Probability density'),bic.FontSize,bic.CbarNorth)
+                plt.show()
+                plt.axis('tight')
+                plt.legend('randomized','(1/\mu)e^{-b^2/\mu}')
+                
+            else:
+
+                pntstr = [1,np.length(X)]
+                dumt = bic.tv/10^bic.TScale
+                for k in range(np.length(X)):
+                    
+                    # Calculate "point-out"
+                    [Bi] = bic.GetBispec(bic.sg,bic.BicVec,bic.LilGuy,Y(k),X(k),False)
+                    if Bi == ' ':
+                        return
+                    
+                    if bic.PlotType == {'abs','imag','real'}:
+                        umm = eval(print('%s(Bi)',bic.PlotType))
+                        if bic.PlotType == 'abs':
+                            plt.semilogy(dumt,umm,'linewidth',bic.LineWidth,'color',bic.LineColor(50+40*k))
+                        elif bic.PlotType != 'abs':
+                            plt.plot(dumt,umm,'linewidth',bic.LineWidth,'color',bic.LineColor(50+40*k))
+                        elif bic.PlotType == 'angle':
+                            plt.plot(dumt,np.unwrap(np.angle(Bi))/np.pi,'linewidth',bic.LineWidth,'color',bic.LineColor(50+40*k),'linestyle','-.','marker','x')
+                    if k==1:
+                        plt.show()
+                    pntstr[k] = print('(%3.2f,%3.2f) %sHz',dum( fLocX(k) ),dum( fLocY(k) ),bic.ScaleToString(bic.FScale))      
+                plt.close()
+                plt.xlim([dumt(1),dumt()])
+                plt.grid()    
+
+                if bic.PlotType == 'angle':
+                    ystr = [ystr,'/\pi']
+                tstr = print('Time [%ss]',bic.ScaleToString(bic.TScale))
+                bic.PlotLabels({tstr,ystr},bic.FontSize,bic.CbarNorth)
+
+                plt.legend(pntstr,'fontsize',14,'fontweight','bold')
+
+
+
+# All of this is my attempt at a Tkinter GUI, prob needs to be edited and def psuedocode, will
+# eed to copy the fig block for each subplot we want and index like axi where i = 1, 2, etc.
+
+# def PlotGui(data):
+#     # -------------------
+#     # Make a user interface
+#     # -------------------
+#     import tkinter as tk
+#     import matplotlib.pyplot as plt
+#     from pandas import DataFrame as df
+#     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+#     print("Include path to data file")
+#     data = input()
+#     data = df(data, columns = ['Time', 'Amplitude'])
+#     root = tk.TK()
+
+#     fig = plt.figure() #options?
+#     ax = fig.add_subplot(221)   #think this makes a 2x2 not sure what we want
+#     scatter = FigureCanvasTKAgg(fig, root)  #just using scatter as a place holder, I know it's not actually a scatterplot
+#     df.plot(kind = 'line', figsize = (6, 6), title = "Dope GUI", legend = "Def", ax = ?)
