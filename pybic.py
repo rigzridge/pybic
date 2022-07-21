@@ -261,6 +261,7 @@ class BicAn:
     Figure    = 0
     AxHands   = [0,0,0]
     CaxHands  = [None,None]
+    NewGUICax = False
 
     tv = []   # Time vector
     fv = []   # Frequency vector
@@ -363,7 +364,7 @@ class BicAn:
 
             else:
                 print('***ERROR*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
-                error()
+                np.error()
         else:
             
             sz = inData.shape
@@ -383,7 +384,7 @@ class BicAn:
                     self.Raw = inData                 # Boom!
 
             else:
-                error()
+                np.error()
 
             for key, val in kwargs.items():          # Loop through all keyword : value pairs
 
@@ -960,7 +961,7 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     return sig,t,fS
 
 
-def TestSignal(whatsig):
+def TestSignal(self,whatsig):
 # ------------------
 # Provides FM test signal
 # ------------------
@@ -1034,7 +1035,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
         time_vec[m] = t0 + m*step/samprate
         for k in range(N):
-            Ym = sig[m*step : m*step + subint, k] # Select subinterval    
+            Ym = sig[m*step : m*step + subint] # Select subinterval    
             Ym = Ym[0:nfreq]            # Take only what is needed for res
             if detrend:                 # Remove linear least-squares fit
                 Ym = ApplyDetrend(Ym)
@@ -1285,6 +1286,89 @@ def RunDemo():
     b = BicAn('circle')
 
     return b
+
+def PlotPointOut(bic,X,Y):
+        # ------------------
+        # Plot value of b^2 over time
+        # ------------------
+            fig = plt.fig()
+            
+            fLocX = X
+            fLocY = Y
+            
+            [ystr] = bic.WhichPlot
+            
+            dum = bic.fv/10^bic.FScale
+            if bic.Nseries>1:
+                dum = bic.ff/10^bic.FScale
+                X = X - (np.length(bic.fv)-1)
+                Y = Y - (np.length(bic.fv)-1)
+
+            if bic.PlotType == 'bicoh':
+                
+                Ntrials = 2000; 
+                g = np.zeros(1,Ntrials)
+                xstr = print('(%3.1f,%3.1f) %sHz',dum( fLocX(1) ),dum( fLocY(1) ),bic.ScaleToString(bic.FScale))
+                
+                print('Calculating distribution for %s...      ',xstr)  
+                for k in range(Ntrials):
+                    LoadBar(k,Ntrials)
+                    g=g(k)
+                    [g] = bic.GetBispec(bic.sg,bic.BicVec,bic.LilGuy,Y(1),X(1),True)
+                print('\b\b^]\n')  
+                
+                # Limit b^2, create vector, and produce histogram 
+                b2lim = 0.5
+                b2vec = np.linspace(0,b2lim,1000)
+                cnt = np.hist(g,b2vec)
+
+                # Integrate count
+                intcnt = sum(cnt)*(b2vec(2)-b2vec(1))
+                # exp dist -> (1/m)exp(-x/m)
+                m = np.mean(g)
+                plt.plot(b2vec,np.smooth(cnt/intcnt,10),'linewidth',bic.LineWidth,'color',bic.LineColor[110,:],'marker','x','linestyle','none')
+                plt.show()
+                # More accurate distibution... Just more complicated! (Get to it later...)
+                #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',bic.LineWidth,'color','red'); 
+                plt.plot(b2vec,(1/m)*np.exp(-b2vec/m),'linewidth',bic.LineWidth,'color','red')
+
+                bic.PlotLabels((['b^2',xstr],'Probability density'),bic.FontSize,bic.CbarNorth)
+                plt.show()
+                plt.axis('tight')
+                plt.legend('randomized','(1/\mu)e^{-b^2/\mu}')
+                
+            else:
+
+                pntstr = [1,np.length(X)]
+                dumt = bic.tv/10^bic.TScale
+                for k in range(np.length(X)):
+                    
+                    # Calculate "point-out"
+                    [Bi] = bic.GetBispec(bic.sg,bic.BicVec,bic.LilGuy,Y(k),X(k),False)
+                    if Bi == ' ':
+                        return
+                    
+                    if bic.PlotType == {'abs','imag','real'}:
+                        umm = eval(print('%s(Bi)',bic.PlotType))
+                        if bic.PlotType == 'abs':
+                            plt.semilogy(dumt,umm,'linewidth',bic.LineWidth,'color',bic.LineColor(50+40*k))
+                        elif bic.PlotType != 'abs':
+                            plt.plot(dumt,umm,'linewidth',bic.LineWidth,'color',bic.LineColor(50+40*k))
+                        elif bic.PlotType == 'angle':
+                            plt.plot(dumt,np.unwrap(np.angle(Bi))/np.pi,'linewidth',bic.LineWidth,'color',bic.LineColor(50+40*k),'linestyle','-.','marker','x')
+                    if k==1:
+                        plt.show()
+                    pntstr[k] = print('(%3.2f,%3.2f) %sHz',dum( fLocX(k) ),dum( fLocY(k) ),bic.ScaleToString(bic.FScale))      
+                plt.close()
+                plt.xlim([dumt(1),dumt()])
+                plt.grid()    
+
+                if bic.PlotType == 'angle':
+                    ystr = [ystr,'/\pi']
+                tstr = print('Time [%ss]',bic.ScaleToString(bic.TScale))
+                bic.PlotLabels({tstr,ystr},bic.FontSize,bic.CbarNorth)
+
+                plt.legend(pntstr,'fontsize',14,'fontweight','bold')
 
 
 
