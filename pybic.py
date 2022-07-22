@@ -58,6 +58,9 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/21/2022 -> Merged Tyler's addition of PlotPointOut(), slight edits for
+# debugging. NewGUICax is now initialized.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/17/2022 -> Added CalcMean() button to emulate Matlab version; trying to 
 # fix the issue with colorbar overplots! [...] Fixed with NewGUICax flag. 
 # [...] Added PlotType radiobutton, and reverted SignalGen() output. _GR
@@ -71,6 +74,7 @@
 # idk how to comment... anyway
 # tl;dr make an array or pandas data frame, feed it into tk canvas, pack it 
 # together and decide on subplot layout (rows, cols, index)
+# [...] WarnSize now private attribute; BicAn bails if inData is broken. _GR
 # [...] Going to create a branch for Tkinter GUI. I resurrected the glitchy 
 # code I'd tested a few days ago (7/14) and went from there. Comboboxes are 
 # pretty sweet for colormaps (looking at you, BicAn 1.0!), so the switch to 
@@ -364,7 +368,7 @@ class BicAn:
 
             else:
                 print('***ERROR*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
-                np.error()
+                error()
         else:
             
             sz = inData.shape
@@ -382,9 +386,8 @@ class BicAn:
                         inData = np.transpose(inData) # Transpose if so
 
                     self.Raw = inData                 # Boom!
-
             else:
-                np.error()
+                error()
 
             for key, val in kwargs.items():          # Loop through all keyword : value pairs
 
@@ -768,7 +771,7 @@ class BicAn:
         self.PlotSpectro(fig,self.AxHands[1])
         self.PlotPowerSpec(fig,self.AxHands[2])       
 
-        plt.tight_layout()
+        #plt.tight_layout()
         plt.show()
         self.NewGUICax = False
         return
@@ -835,6 +838,86 @@ class BicAn:
             print('Operation terminated by user.')
             self._RunBicAn = False
         return         # Bail if that seems scary! 
+
+
+    def PlotPointOut(self,X,Y):
+    # ------------------
+    # Plot value of b^2 over time
+    # ------------------
+        fig = plt.figure()
+        ax  = plt.subplots(111)
+
+        fLocX = X
+        fLocY = Y
+
+        _,xstr = self.WhichPlot()
+
+        dum = self.fv/10^self.FScale
+        if self._Nseries>1:
+            dum = self.ff/10^self.FScale
+            X = X - len(self.fv)
+            Y = Y - len(self.fv)
+
+        if self.PlotType == 'bicoh':
+
+            Ntrials = 2000
+            g = np.zeros((1,Ntrials))
+            xstr = '(%3.1f,%3.1f) %sHz' % ( dum( fLocX[0] ), dum( fLocY[0] ), self.ScaleToString(self.FScale) )
+
+            print('Calculating distribution for {}...      '.format(xstr))
+            for k in range(Ntrials):
+                LoadBar(k,Ntrials)
+                g[k],_,_ = self.GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
+            print('\b\b^]\n')  
+
+            # Limit b^2, create vector, and produce histogram 
+            b2lim = 0.5
+            b2vec = np.linspace(0,b2lim,1000)
+            cnt,_ = np.histogram(g, bins=b2vec)
+
+            # Integrate count
+            intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
+            # exp dist -> (1/m)exp(-x/m)
+            m = np.mean(g)
+            plt.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, color=self.LineColor[110,:], marker='x', linestyle='none')
+            # More accurate distibution... Just more complicated! (Get to it later...)
+            #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
+            plt.plot(b2vec, (1/m)*np.exp(-b2vec/m), linewidth=self.LineWidth, color='red')
+
+            self.PlotLabels(fig,['b^2' + xstr,'Probability density'], self.FontSize, self.CbarNorth, ax, None, None)
+            plt.show()
+            plt.legend('randomized','(1/\mu)e^{-b^2/\mu}')
+
+        else:
+            dumt = self.tv/10^self.TScale
+            for k in range(len(X)):
+
+                # Calculate "point-out"
+                _,_,Bi = self.GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
+                if Bi == ' ':
+                    return
+
+                if self.PlotType in ['abs','imag','real']:
+                    umm = eval( '%s(Bi)' % (self.PlotType) )
+                    if self.PlotType == 'abs':
+                        plt.semilogy(dumt,umm, linewidth=self.LineWidth)
+                    else 
+                        plt.plot(dumt,umm, linewidth=self.LineWidth)
+                elif self.PlotType == 'angle':
+                    plt.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x')
+                if k==1:
+                    plt.show()
+                pntstr[k] = '(%3.2f,%3.2f) %sHz' % ( dum( fLocX[k] ),dum( fLocY[k] ),self.ScaleToString(self.FScale) )      
+
+            plt.xlim([dumt(1),dumt()])
+            plt.grid()    
+
+            if self.PlotType == 'angle':
+                ystr = ystr + '/\pi'
+            tstr = 'Time [%ss]' % ( self.ScaleToString(self.TScale) )
+            self.PlotLabels(fig,[tstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
+
+            plt.legend(pntstr,fontsize=14,fontweight='bold')
 
 
 # Module methods
@@ -961,7 +1044,7 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     return sig,t,fS
 
 
-def TestSignal(self,whatsig):
+def TestSignal(whatsig):
 # ------------------
 # Provides FM test signal
 # ------------------
@@ -989,26 +1072,26 @@ def TestSignal(self,whatsig):
         x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
         y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
         inData = np.zeros( (len(t), 2) )
-        inData[:,0] = x 
-        inData[:,1] = x + y 
+        inData[:,0] = x[:,0]
+        inData[:,1] = x[:,0] + y[:,0]
     elif dum == 'cross_3tone':
         x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
         y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
         z,_,_  = SignalGen(fS,tend,1,67,0,0,0,0,0,0,noisy)
         inData = np.zeros( (len(t), 3) )
-        inData[:,0] = x 
-        inData[:,1] = y 
-        inData[:,2] = z
+        inData[:,0] = x[:,0] 
+        inData[:,1] = y[:,0] 
+        inData[:,2] = z[:,0]
     elif dum == 'cross_circle':
         x,t,_  = SignalGen(fS,tend,1,22,10,0,0,0,0,1/20,noisy)
         y,_,_  = SignalGen(fS,tend,0,0 ,0 ,1,45,10,0,1/20,noisy)
         z,_,_  = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
         inData = np.zeros( (len(t), 3) )
-        inData[:,0] = x 
-        inData[:,1] = y
-        inData[:,2] = z
+        inData[:,0] = x[:,0]
+        inData[:,1] = y[:,0]
+        inData[:,2] = z[:,0]
     else:
-        print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(self.whatsig)) 
+        print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(whatsig)) 
         inData,t,fS = SignalGen(fS,tend,1,22,0,0,0,0,0,0,0)
     return inData,t,fS
 
@@ -1035,7 +1118,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
         time_vec[m] = t0 + m*step/samprate
         for k in range(N):
-            Ym = sig[m*step : m*step + subint] # Select subinterval    
+            Ym = sig[m*step : m*step + subint, k] # Select subinterval    
             Ym = Ym[0:nfreq]            # Take only what is needed for res
             if detrend:                 # Remove linear least-squares fit
                 Ym = ApplyDetrend(Ym)
@@ -1286,89 +1369,6 @@ def RunDemo():
     b = BicAn('circle')
 
     return b
-
-def PlotPointOut(bic,X,Y):
-        # ------------------
-        # Plot value of b^2 over time
-        # ------------------
-            fig = plt.fig()
-            
-            fLocX = X
-            fLocY = Y
-            
-            [ystr] = bic.WhichPlot
-            
-            dum = bic.fv/10^bic.FScale
-            if bic.Nseries>1:
-                dum = bic.ff/10^bic.FScale
-                X = X - (np.length(bic.fv)-1)
-                Y = Y - (np.length(bic.fv)-1)
-
-            if bic.PlotType == 'bicoh':
-                
-                Ntrials = 2000; 
-                g = np.zeros(1,Ntrials)
-                xstr = print('(%3.1f,%3.1f) %sHz',dum( fLocX(1) ),dum( fLocY(1) ),bic.ScaleToString(bic.FScale))
-                
-                print('Calculating distribution for %s...      ',xstr)  
-                for k in range(Ntrials):
-                    LoadBar(k,Ntrials)
-                    g=g(k)
-                    [g] = bic.GetBispec(bic.sg,bic.BicVec,bic.LilGuy,Y(1),X(1),True)
-                print('\b\b^]\n')  
-                
-                # Limit b^2, create vector, and produce histogram 
-                b2lim = 0.5
-                b2vec = np.linspace(0,b2lim,1000)
-                cnt = np.hist(g,b2vec)
-
-                # Integrate count
-                intcnt = sum(cnt)*(b2vec(2)-b2vec(1))
-                # exp dist -> (1/m)exp(-x/m)
-                m = np.mean(g)
-                plt.plot(b2vec,np.smooth(cnt/intcnt,10),'linewidth',bic.LineWidth,'color',bic.LineColor[110,:],'marker','x','linestyle','none')
-                plt.show()
-                # More accurate distibution... Just more complicated! (Get to it later...)
-                #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',bic.LineWidth,'color','red'); 
-                plt.plot(b2vec,(1/m)*np.exp(-b2vec/m),'linewidth',bic.LineWidth,'color','red')
-
-                bic.PlotLabels((['b^2',xstr],'Probability density'),bic.FontSize,bic.CbarNorth)
-                plt.show()
-                plt.axis('tight')
-                plt.legend('randomized','(1/\mu)e^{-b^2/\mu}')
-                
-            else:
-
-                pntstr = [1,np.length(X)]
-                dumt = bic.tv/10^bic.TScale
-                for k in range(np.length(X)):
-                    
-                    # Calculate "point-out"
-                    [Bi] = bic.GetBispec(bic.sg,bic.BicVec,bic.LilGuy,Y(k),X(k),False)
-                    if Bi == ' ':
-                        return
-                    
-                    if bic.PlotType == {'abs','imag','real'}:
-                        umm = eval(print('%s(Bi)',bic.PlotType))
-                        if bic.PlotType == 'abs':
-                            plt.semilogy(dumt,umm,'linewidth',bic.LineWidth,'color',bic.LineColor(50+40*k))
-                        elif bic.PlotType != 'abs':
-                            plt.plot(dumt,umm,'linewidth',bic.LineWidth,'color',bic.LineColor(50+40*k))
-                        elif bic.PlotType == 'angle':
-                            plt.plot(dumt,np.unwrap(np.angle(Bi))/np.pi,'linewidth',bic.LineWidth,'color',bic.LineColor(50+40*k),'linestyle','-.','marker','x')
-                    if k==1:
-                        plt.show()
-                    pntstr[k] = print('(%3.2f,%3.2f) %sHz',dum( fLocX(k) ),dum( fLocY(k) ),bic.ScaleToString(bic.FScale))      
-                plt.close()
-                plt.xlim([dumt(1),dumt()])
-                plt.grid()    
-
-                if bic.PlotType == 'angle':
-                    ystr = [ystr,'/\pi']
-                tstr = print('Time [%ss]',bic.ScaleToString(bic.TScale))
-                bic.PlotLabels({tstr,ystr},bic.FontSize,bic.CbarNorth)
-
-                plt.legend(pntstr,'fontsize',14,'fontweight','bold')
 
 
 
