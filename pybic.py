@@ -58,6 +58,9 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/25/2022 -> Sketched beta version of ClickPlot(), rough edges abound.
+# Tyler's update to BicAn('input') dialog have been incorporated.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/24/2022 -> Debugged PlotPointOut() more completely, some issues remain 
 # with multiple plots; still need to get legends figured out! 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -204,6 +207,9 @@ from tkinter import messagebox, filedialog, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from tkinter import *
+import pandas as pd
+
+global clickx, clicky
 
 # Define classes for bispec script
 
@@ -343,6 +349,7 @@ class BicAn:
                 self.Raw       = inData
                 self.FreqRes   = 1/self.SubInt    
                 self._NormToNyq = True
+                self.ParseInput(sig,{'SampRate':1})
 
             elif isinstance(inData,str):
                 # Check string inputs
@@ -355,7 +362,11 @@ class BicAn:
                     # Start getfile prompt
                     infile = FileDialog()
                     # Try comma-separated? ### BUGS!
-                    sig = np.loadtxt(infile, delimiter=',')  
+                    #sig = np.loadtxt(infile, delimiter=',') #old method
+
+                    sig  = pd.read_csv(infile, sep=r'\s*(?:\||\#|\,)\s*', skiprows=0, dtype = 'float', engine='python') #requires csv files   #as is requires a hard coded number of rows to skip, looking for solutions to auto detect
+                    cols = sig.columns
+                    sig  = sig[cols[1]]  #should have read in a file and separated every type of delimiter and passed the second column (assuming thats data)
 
                     self.ParseInput(sig,{}) 
 
@@ -808,6 +819,8 @@ class BicAn:
         radio3 = RadioButtons(rax3, ['bicoh', 'abs', 'real', 'imag', 'angle', 'mean', 'std'], active=0)
         radio3.on_clicked(self.ChangeType)
         ####
+
+        cid = fig.canvas.mpl_connect('button_press_event', self.ClickPlot)
         
         self.NewGUICax = True
         self.RefreshGUI()
@@ -925,6 +938,51 @@ class BicAn:
             #plt.legend(pntstr,fontsize=14,fontweight='bold')
 
 
+    def ClickPlot(self,event):
+    # ------------------
+    # Callback for clicks
+    # ------------------
+        ax = event.inaxes
+        if ax == self.AxHands[0]: # Check bispectrum
+            fx = event.xdata
+            fy = event.ydata
+            buf = 'fx = %3.3f, fy = %3.3f' % (fx, fy)
+            print(buf)
+
+            print('button=',event.button)
+
+            f = self.fv/10**self.FScale
+            if self._Nseries>1:
+                f = self.ff/10**bic.FScale
+                # Need to subtract something from index now!!!!
+
+            _,Ix = arrmin( abs(f-fx) )
+            _,Iy = arrmin( abs(f-fy) )
+
+            self.PlotPointOut([Ix],[Iy])
+            # self.clickx = x
+            # self.clicky = y
+
+        elif ax == self.AxHands[1]: # Check bispectrum
+            tx = event.xdata
+            t  = self.tv/10**self.TScale
+            _,It = arrmin( abs(t-tx) ) # Find closest point in time
+            self.PlotSlice = It
+
+            f  = self.fv/10**self.FScale
+            dt = self.SubInt/self.SampRate/10**self.TScale
+
+            ax.plot([t[It], t[It]],      [0, f[-1]], color='white', linewidth=2)
+            ax.plot([t[It]+dt, t[It]+dt],[0, f[-1]], color='white', linewidth=2)
+
+            plt.show()
+            #self.RefreshGUI()
+
+        else:
+            print('No callback there!')
+        return    
+
+
 # Module methods
 
 def FileDialog():
@@ -973,7 +1031,7 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
             plt.yticks(size=fsize, weight=tickweight)
-    cid = fig.canvas.mpl_connect('button_press_event', GetClick)
+    #cid = fig.canvas.mpl_connect('button_press_event', GetClick)
     return cax
 
 
@@ -1353,18 +1411,18 @@ def LoadBar(m,M):
     return
 
 
-def GetClick(event):
-# ------------------
-# Callback for clicks
-# ------------------
-    try:
-        global clickx, clicky
-        clickx, clicky = event.xdata, event.ydata
-        buf = 'x = %3.3f, y = %3.3f' % (clickx, clicky)
-        print(buf)
-    except TypeError:
-        print('You can''t click outside the axis!')
-    return    
+# def GetClick(event):
+# # ------------------
+# # Callback for clicks
+# # ------------------
+#     try:
+        
+#         clickx, clicky = event.xdata, event.ydata
+#         buf = 'x = %3.3f, y = %3.3f' % (clickx, clicky)
+#         print(buf)
+#     except TypeError:
+#         print('You can''t click outside the axis!')
+#     return 
 
 
 def RunDemo():
@@ -1372,8 +1430,16 @@ def RunDemo():
 # Demonstration
 # ------------------
     b = BicAn('circle')
-
     return b
+
+
+def arrmin(arr):
+# ------------------
+# Matlabish min()
+# ------------------   
+    m = min(arr)
+    index = arr.tolist().index( m )
+    return m,index
 
 
 
