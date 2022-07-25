@@ -58,6 +58,9 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/24/2022 -> Debugged PlotPointOut() more completely, some issues remain 
+# with multiple plots; still need to get legends figured out! 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/21/2022 -> Merged Tyler's addition of PlotPointOut(), slight edits for
 # debugging. NewGUICax is now initialized.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -175,7 +178,6 @@
 
 # (2) Extra but nice
 # PlotPointOut
-
 
 # (3) More to learn about Python...
 # SwitchPlot
@@ -771,7 +773,7 @@ class BicAn:
         self.PlotSpectro(fig,self.AxHands[1])
         self.PlotPowerSpec(fig,self.AxHands[2])       
 
-        #plt.tight_layout()
+        plt.tight_layout()
         plt.show()
         self.NewGUICax = False
         return
@@ -844,80 +846,83 @@ class BicAn:
     # ------------------
     # Plot value of b^2 over time
     # ------------------
-        fig = plt.figure()
-        ax  = plt.subplots(111)
+        fig, ax = plt.subplots()
 
         fLocX = X
         fLocY = Y
 
-        _,xstr = self.WhichPlot()
+        _,ystr = self.WhichPlot()
 
-        dum = self.fv/10^self.FScale
+        dum = self.fv/10**self.FScale
         if self._Nseries>1:
-            dum = self.ff/10^self.FScale
+            dum = self.ff/10**self.FScale
             X = X - len(self.fv)
             Y = Y - len(self.fv)
 
         if self.PlotType == 'bicoh':
 
-            Ntrials = 2000
-            g = np.zeros((1,Ntrials))
-            xstr = '(%3.1f,%3.1f) %sHz' % ( dum( fLocX[0] ), dum( fLocY[0] ), self.ScaleToString(self.FScale) )
+            Ntrials = 200
+            g = np.zeros((Ntrials))
+            xstr = '(%3.1f,%3.1f) %sHz' % ( dum[ fLocX[0] ], dum[ fLocY[0] ], ScaleToString(self.FScale) )
 
             print('Calculating distribution for {}...      '.format(xstr))
             for k in range(Ntrials):
                 LoadBar(k,Ntrials)
-                g[k],_,_ = self.GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
+                g[k],_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
             print('\b\b^]\n')  
 
             # Limit b^2, create vector, and produce histogram 
-            b2lim = 0.5
-            b2vec = np.linspace(0,b2lim,1000)
-            cnt,_ = np.histogram(g, bins=b2vec)
+            b2lim  = 0.5
+            b2bins = 1000
+            b2vec  = np.linspace(0,b2lim,b2bins)
+            cnt,_  = np.histogram(g, bins=b2bins, range=(0,b2lim) )
 
             # Integrate count
             intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
             # exp dist -> (1/m)exp(-x/m)
             m = np.mean(g)
-            plt.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, color=self.LineColor[110,:], marker='x', linestyle='none')
+            plt.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none')
             # More accurate distibution... Just more complicated! (Get to it later...)
             #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
             plt.plot(b2vec, (1/m)*np.exp(-b2vec/m), linewidth=self.LineWidth, color='red')
 
-            self.PlotLabels(fig,['b^2' + xstr,'Probability density'], self.FontSize, self.CbarNorth, ax, None, None)
+            PlotLabels(fig,['$b^2$' + xstr,'Probability density'], self.FontSize, self.CbarNorth, ax, None, None)
             plt.show()
-            plt.legend('randomized','(1/\mu)e^{-b^2/\mu}')
+            #plt.legend('randomized','(1/\mu)e^{-b^2/\mu}')
 
         else:
-            dumt = self.tv/10^self.TScale
+            dumt = self.tv/10**self.TScale
+            pntstr = ['']*len(X)
             for k in range(len(X)):
 
                 # Calculate "point-out"
-                _,_,Bi = self.GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
-                if Bi == ' ':
-                    return
+                _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
+                if Bi is None:
+                    print('huh?')
+                    #return
 
                 if self.PlotType in ['abs','imag','real']:
-                    umm = eval( '%s(Bi)' % (self.PlotType) )
+                    umm = eval('np.{}(Bi)'.format(self.PlotType))
                     if self.PlotType == 'abs':
                         plt.semilogy(dumt,umm, linewidth=self.LineWidth)
-                    else 
+                    else:
                         plt.plot(dumt,umm, linewidth=self.LineWidth)
                 elif self.PlotType == 'angle':
                     plt.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x')
                 if k==1:
                     plt.show()
-                pntstr[k] = '(%3.2f,%3.2f) %sHz' % ( dum( fLocX[k] ),dum( fLocY[k] ),self.ScaleToString(self.FScale) )      
+                pntstr[k] = '(%3.2f,%3.2f) %sHz' % ( dum[ fLocX[k] ],dum[ fLocY[k] ], ScaleToString(self.FScale) )      
 
-            plt.xlim([dumt(1),dumt()])
-            plt.grid()    
+            plt.xlim([dumt[0],dumt[-1]])
+            plt.grid(True)    
 
             if self.PlotType == 'angle':
-                ystr = ystr + '/\pi'
-            tstr = 'Time [%ss]' % ( self.ScaleToString(self.TScale) )
-            self.PlotLabels(fig,[tstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
+                ystr = ystr + '/$\pi$'
+            tstr = 'Time [%ss]' % ( ScaleToString(self.TScale) )
+            PlotLabels(fig,[tstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
+            plt.show()
 
-            plt.legend(pntstr,fontsize=14,fontweight='bold')
+            #plt.legend(pntstr,fontsize=14,fontweight='bold')
 
 
 # Module methods
@@ -1272,9 +1277,9 @@ def GetBispec(spec,v,lilguy,j,k,rando):
     s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
 
     if rando:
-        p1 = abs(p1)*np.exp[ 2j*np.pi* (2*np.random.random(np.size(p1)) - 1) ]
-        p2 = abs(p2)*np.exp[ 2j*np.pi* (2*np.random.random(np.size(p2)) - 1) ]
-        s  = abs(s)* np.exp[ 2j*np.pi* (2*np.random.random(np.size(s)) - 1) ]
+        p1 = abs(p1)*np.exp( 2j*np.pi* (2*np.random.random( p1.shape ) - 1) )
+        p2 = abs(p2)*np.exp( 2j*np.pi* (2*np.random.random( p2.shape ) - 1) )
+        s  = abs(s)* np.exp( 2j*np.pi* (2*np.random.random( s.shape  ) - 1) )
 
     Bi  = p1*p2*np.conj(s)
     e12 = abs(p1*p2)**2
