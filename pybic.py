@@ -58,6 +58,10 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/26/2022 -> Fixed annoying Tkinter root window thing with root.withdraw()
+# and added images for Tkinter buttons; fixed tight_layout() issue! Just had
+# to use fig = Figure(..., tight_layout = True) when creating base figure!
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/17/2022 -> Added CalcMean() button to emulate Matlab version; trying to 
 # fix the issue with colorbar overplots! Fixed with NewGUICax flag. _GR
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -157,12 +161,13 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # THINGS TO DO!
-# **Swap out matplotlib widgets for full tkinter GUI =^x
+# ** Swap out matplotlib widgets for full tkinter GUI =^x
 # ** Figure out setter functions
 # ** Configure warnings
 # *_ Implement some kind of check for Raw data! Should eliminate string, etc.
 # ** Fix colorbar axes overplotting each refresh
 # ** Add buttons and callbacks from Matlab
+# *_ Fix tight_layout() and axes labels issue!
 
 # Methods left:
 #{
@@ -262,6 +267,7 @@ class BicAn:
     Figure    = 0
     AxHands   = [0,0,0]
     CaxHands  = [None,None]
+    NewGUICax = False
 
     tv = []   # Time vector
     fv = []   # Frequency vector
@@ -356,9 +362,12 @@ class BicAn:
                 elif dum in siglist:
                     # If explicit test signal (or demo), confirm with user, then recursively call ParseInputs
                     dum = 'circle' if dum == 'demo' else dum
+                    root = tk.Tk()
+                    root.withdraw()
                     if messagebox.askokcancel('Question','Run the "{}" demo?'.format(dum)):
                         sig,_,fS = TestSignal(dum)
                         self.ParseInput(sig,{'SampRate':fS})  
+                    root.destroy()
                 else:
                     print('Hmmm. That string isn`t supported yet... Try "demo".')   
 
@@ -782,7 +791,7 @@ class BicAn:
         self._gui = tk.Tk()
 
         # Intialize figure and axes
-        fig = Figure(figsize=(6,6))
+        fig = Figure(figsize=(6,6), tight_layout=True)
         ax1 = fig.add_subplot(121)
         ax2 = fig.add_subplot(222)
         ax3 = fig.add_subplot(224)
@@ -803,15 +812,37 @@ class BicAn:
         combo2.pack()
         self.combo2 = combo2
 
+        # Create toolbar
+        toolbar = Frame(self._gui)
+        pad = 1
+
         # Random button
-        button1 = tk.Button(self._gui, text='Bet you won`t!', command=self.DumFunc)
-        button1.pack()
+        pngpath1 = os.getcwd() + '/assets/BicOfTime.png'  # Choose image
+        photo1 = PhotoImage(file=pngpath1)                # Create photo object
+        self.photo1 = photo1                              # Must save to prevent garbage collection!
+
+        button1 = tk.Button(toolbar, image=photo1, command=self.DumFunc)
+        button1.pack(side=LEFT, padx=pad, pady=pad)
         self.button1 = button1
 
         # CalcMean
-        button2 = tk.Button(self._gui, text='CalcMean()', command=self.CalcMeanButton)
-        button2.pack()
+        pngpath2 = os.getcwd() + '/assets/CalcMean.png'
+        photo2 = PhotoImage(file=pngpath2)
+        self.photo2 = photo2
+
+        button2 = tk.Button(toolbar, image=photo2, command=self.CalcMeanButton)
+        button2.pack(side=LEFT, padx=pad, pady=pad)
         self.button2 = button2
+
+        # ???
+        pngpath3 = os.getcwd() + '/assets/ConfidenceInterval2.png'
+        photo3 = PhotoImage(file=pngpath3)
+        self.photo3 = photo3
+
+        button3 = tk.Button(toolbar, image=photo3, command=self.DumFunc)
+        button3.pack(side=LEFT, padx=pad, pady=pad)
+
+        toolbar.pack(side=TOP, fill=X)
 
         # Save figure and axes with object
         self.Figure   = fig
