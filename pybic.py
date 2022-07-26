@@ -58,8 +58,11 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/26/2022 -> Fixed annoying Tkinter root window thing with root.withdraw()
+# and added keypress function -> some radiobuttons removed!
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/25/2022 -> Sketched beta version of ClickPlot(), rough edges abound.
-# Tyler's update to BicAn('input') dialog have been incorporated.
+# Tyler's updates to bic.BicAn('input') dialog have been incorporated.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/24/2022 -> Debugged PlotPointOut() more completely, some issues remain 
 # with multiple plots; still need to get legends figured out! 
@@ -167,12 +170,15 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # THINGS TO DO!
-# ** Swap out matplotlib widgets for full tkinter GUI =^x
+# *_ Swap out matplotlib widgets for full tkinter GUI =^x
 # ** Figure out setter functions
 # ** Configure warnings
 # __ Implement some kind of check for Raw data! Should eliminate string, etc.
-# *_ Fix colorbar axes overplotting each refresh
-# ** Add buttons and callbacks from Matlab
+# __ Fix colorbar axes overplotting each refresh
+# ** Fix issue with colorbar labels when calling RefreshGUI()
+# *_ Add buttons and callbacks from Matlab
+# ** Swap out "dum" variables for more literate ones
+# ** Comment the code!!!
 
 # Methods left:
 #{
@@ -180,10 +186,9 @@
 # ...ProcessData
 
 # (2) Extra but nice
-# PlotPointOut
+# ...
 
 # (3) More to learn about Python...
-# SwitchPlot
 # ...PlotGUI
 # ...RefreshGUI
 # MakeMovie
@@ -207,9 +212,8 @@ from tkinter import messagebox, filedialog, ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from tkinter import *
-import pandas as pd
+#import pandas as pd
 
-global clickx, clicky
 
 # Define classes for bispec script
 
@@ -354,11 +358,11 @@ class BicAn:
             elif isinstance(inData,str):
                 # Check string inputs
                 self._RunBicAn = False
-                dum = inData.lower()
+                instr = inData.lower()
 
                 #### Should this be global?
                 siglist = ['demo','classic','tone','noisy','2tone','3tone','line','circle','fast_circle','cross_2tone','cross_3tone','cross_circle']
-                if dum == 'input':
+                if instr == 'input':
                     # Start getfile prompt
                     infile = FileDialog()
                     # Try comma-separated? ### BUGS!
@@ -370,12 +374,15 @@ class BicAn:
 
                     self.ParseInput(sig,{}) 
 
-                elif dum in siglist:
+                elif instr in siglist:
                     # If explicit test signal (or demo), confirm with user, then recursively call ParseInputs
-                    dum = 'circle' if dum == 'demo' else dum
-                    if messagebox.askokcancel('Question','Run the "{}" demo?'.format(dum)):
-                        sig,_,fS = TestSignal(dum)
+                    instr = 'circle' if instr == 'demo' else instr
+                    root = tk.Tk()
+                    root.withdraw()
+                    if messagebox.askokcancel('Question','Run the "{}" demo?'.format(instr), master=root):
+                        sig,_,fS = TestSignal(instr)
                         self.ParseInput(sig,{'SampRate':fS})  
+                    root.destroy()
                 else:
                     print('Hmmm. That string isn`t supported yet... Try "demo".')   
 
@@ -767,6 +774,87 @@ class BicAn:
         self.PlotType = old_plot
 
 
+    def PlotPointOut(self,X,Y):
+    # ------------------
+    # Plot value of b^2 over time
+    # ------------------
+        fig, ax = plt.subplots()
+
+        fLocX = X
+        fLocY = Y
+
+        _,ystr = self.WhichPlot()
+
+        dum = self.fv/10**self.FScale
+        if self._Nseries>1:
+            dum = self.ff/10**self.FScale
+            X = X - len(self.fv)
+            Y = Y - len(self.fv)
+
+        if self.PlotType == 'bicoh':
+
+            Ntrials = 200
+            g = np.zeros((Ntrials))
+            xstr = '(%3.1f,%3.1f) %sHz' % ( dum[ fLocX[0] ], dum[ fLocY[0] ], ScaleToString(self.FScale) )
+
+            print('Calculating distribution for {}...      '.format(xstr))
+            for k in range(Ntrials):
+                LoadBar(k,Ntrials)
+                g[k],_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
+            print('\b\b^]\n')  
+
+            # Limit b^2, create vector, and produce histogram 
+            b2lim  = 0.5
+            b2bins = 1000
+            b2vec  = np.linspace(0,b2lim,b2bins)
+            cnt,_  = np.histogram(g, bins=b2bins, range=(0,b2lim) )
+
+            # Integrate count
+            intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
+            # exp dist -> (1/m)exp(-x/m)
+            m = np.mean(g)
+            plt.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none', label='randomized')
+            # More accurate distibution... Just more complicated! (Get to it later...)
+            #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
+            plt.plot(b2vec, (1/m)*np.exp(-b2vec/m), linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
+
+            PlotLabels(fig,['$b^2$' + xstr,'Probability density'], self.FontSize, self.CbarNorth, ax, None, None)
+
+        else:
+            dumt = self.tv/10**self.TScale
+            pntstr = ['']*len(X)
+            for k in range(len(X)):
+
+                # Calculate "point-out"
+                _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
+                if Bi is None:
+                    print('No bispectral data?')
+                    #return
+
+                pntstr[k] = '(%3.2f,%3.2f) %sHz' % ( dum[ fLocX[k] ],dum[ fLocY[k] ], ScaleToString(self.FScale) )
+
+                if self.PlotType in ['abs','imag','real']:
+                    umm = eval('np.{}(Bi)'.format(self.PlotType))
+                    if self.PlotType == 'abs':
+                        plt.semilogy(dumt,umm, linewidth=self.LineWidth, label=pntstr[k])
+                    else:
+                        plt.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k])
+                elif self.PlotType == 'angle':
+                    plt.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', label=pntstr[k])
+
+            plt.xlim([dumt[0],dumt[-1]])
+            plt.grid(True)    
+
+            if self.PlotType == 'angle':
+                ystr = ystr + '/$\pi$'
+            tstr = 'Time [%ss]' % ( ScaleToString(self.TScale) )
+            PlotLabels(fig,[tstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
+
+        plt.tight_layout()
+        plt.legend()
+        plt.show()
+
+
     def RefreshGUI(self):
     # ------------------
     # GUI test
@@ -814,13 +902,10 @@ class BicAn:
         rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
         radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
         radio2.on_clicked(self.DumFunc)
-
-        rax3 = plt.axes([0.0, 0.8, 0.15, 0.2], facecolor=axcolor)
-        radio3 = RadioButtons(rax3, ['bicoh', 'abs', 'real', 'imag', 'angle', 'mean', 'std'], active=0)
-        radio3.on_clicked(self.ChangeType)
         ####
 
         cid = fig.canvas.mpl_connect('button_press_event', self.ClickPlot)
+        pid = fig.canvas.mpl_connect('key_press_event', self.SwitchPlot)
         
         self.NewGUICax = True
         self.RefreshGUI()
@@ -838,11 +923,6 @@ class BicAn:
         self.RefreshGUI()
         return
 
-    def ChangeType(self,event):
-        self.PlotType = event
-        self.RefreshGUI()
-        return
-
 
     def SizeWarnPrompt(self,n):
     # ------------------
@@ -853,89 +933,6 @@ class BicAn:
             print('Operation terminated by user.')
             self._RunBicAn = False
         return         # Bail if that seems scary! 
-
-
-    def PlotPointOut(self,X,Y):
-    # ------------------
-    # Plot value of b^2 over time
-    # ------------------
-        fig, ax = plt.subplots()
-
-        fLocX = X
-        fLocY = Y
-
-        _,ystr = self.WhichPlot()
-
-        dum = self.fv/10**self.FScale
-        if self._Nseries>1:
-            dum = self.ff/10**self.FScale
-            X = X - len(self.fv)
-            Y = Y - len(self.fv)
-
-        if self.PlotType == 'bicoh':
-
-            Ntrials = 200
-            g = np.zeros((Ntrials))
-            xstr = '(%3.1f,%3.1f) %sHz' % ( dum[ fLocX[0] ], dum[ fLocY[0] ], ScaleToString(self.FScale) )
-
-            print('Calculating distribution for {}...      '.format(xstr))
-            for k in range(Ntrials):
-                LoadBar(k,Ntrials)
-                g[k],_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
-            print('\b\b^]\n')  
-
-            # Limit b^2, create vector, and produce histogram 
-            b2lim  = 0.5
-            b2bins = 1000
-            b2vec  = np.linspace(0,b2lim,b2bins)
-            cnt,_  = np.histogram(g, bins=b2bins, range=(0,b2lim) )
-
-            # Integrate count
-            intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
-            # exp dist -> (1/m)exp(-x/m)
-            m = np.mean(g)
-            plt.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none')
-            # More accurate distibution... Just more complicated! (Get to it later...)
-            #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
-            plt.plot(b2vec, (1/m)*np.exp(-b2vec/m), linewidth=self.LineWidth, color='red')
-
-            PlotLabels(fig,['$b^2$' + xstr,'Probability density'], self.FontSize, self.CbarNorth, ax, None, None)
-            plt.show()
-            #plt.legend('randomized','(1/\mu)e^{-b^2/\mu}')
-
-        else:
-            dumt = self.tv/10**self.TScale
-            pntstr = ['']*len(X)
-            for k in range(len(X)):
-
-                # Calculate "point-out"
-                _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
-                if Bi is None:
-                    print('huh?')
-                    #return
-
-                if self.PlotType in ['abs','imag','real']:
-                    umm = eval('np.{}(Bi)'.format(self.PlotType))
-                    if self.PlotType == 'abs':
-                        plt.semilogy(dumt,umm, linewidth=self.LineWidth)
-                    else:
-                        plt.plot(dumt,umm, linewidth=self.LineWidth)
-                elif self.PlotType == 'angle':
-                    plt.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x')
-                if k==1:
-                    plt.show()
-                pntstr[k] = '(%3.2f,%3.2f) %sHz' % ( dum[ fLocX[k] ],dum[ fLocY[k] ], ScaleToString(self.FScale) )      
-
-            plt.xlim([dumt[0],dumt[-1]])
-            plt.grid(True)    
-
-            if self.PlotType == 'angle':
-                ystr = ystr + '/$\pi$'
-            tstr = 'Time [%ss]' % ( ScaleToString(self.TScale) )
-            PlotLabels(fig,[tstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
-            plt.show()
-
-            #plt.legend(pntstr,fontsize=14,fontweight='bold')
 
 
     def ClickPlot(self,event):
@@ -963,7 +960,7 @@ class BicAn:
             # self.clickx = x
             # self.clicky = y
 
-        elif ax == self.AxHands[1]: # Check bispectrum
+        elif ax == self.AxHands[1]: # Check spectrogram
             tx = event.xdata
             t  = self.tv/10**self.TScale
             _,It = arrmin( abs(t-tx) ) # Find closest point in time
@@ -983,6 +980,30 @@ class BicAn:
         return    
 
 
+    def SwitchPlot(self,event):
+    # ------------------
+    # Callback for keypress
+    # ------------------
+        key  = event.key
+        opts = 'BARIPMS'
+        if key in opts:
+            ind = opts.index(key)
+
+            figs = ['bicoh','abs','real','imag','angle','mean','std']
+            self.PlotType = figs[ind]
+
+        elif key == 'right':
+            self.PlotSlice = self.PlotSlice % len(self.tv)
+        elif key == 'left':
+            self.PlotSlice = (self.PlotSlice - 1) % len(self.tv)
+        else:
+            return
+
+        # Activate!
+        self.RefreshGUI()
+        return
+
+
 # Module methods
 
 def FileDialog():
@@ -990,6 +1011,7 @@ def FileDialog():
 # Ganked from StackExchange...
 # ------------------
     root = tk.Tk()
+    root.withdraw()
     # Build a list of tuples for each file type the file dialog should display
     my_ftypes = [('all files', '.*'), ('text files', '.txt'), ('dat files', '.dat')]
     # Ask the user to select a single file name
@@ -1435,12 +1457,11 @@ def RunDemo():
 
 def arrmin(arr):
 # ------------------
-# Matlabish min()
+# Matlab-esque min()
 # ------------------   
     m = min(arr)
     index = arr.tolist().index( m )
     return m,index
-
 
 
 # All of this is my attempt at a Tkinter GUI, prob needs to be edited and def psuedocode, will
