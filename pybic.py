@@ -58,6 +58,11 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 9/04/2022 -> Fixed bug with CaxHands not being refreshed by PlotGUI(),
+# added a bit for limiting colorbar axes [think caxis(...)]-> still testing,
+# fixed root window issue with SizeWarn, fiddled with nonlinear CWT scales,
+# adjusted initialization to avoid issues with fractional SampRate
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/26/2022 -> Fixed annoying Tkinter root window thing with root.withdraw()
 # and added keypress function -> some radiobuttons removed!
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -222,7 +227,7 @@ class BicAn:
     
     # Attributes
     Date      = datetime.now()
-    MaxRes    = 0
+    MaxRes    = 0.
     Samples   = 0
     NFreq     = 0
 
@@ -238,12 +243,12 @@ class BicAn:
     Processed = []
     History   = ' '
 
-    SampRate  = 1
-    FreqRes   = 0
+    SampRate  = 1.
+    FreqRes   = 0.
     SubInt    = 512
     Step      = 128
     Window    = 'hann'       
-    Sigma     = 0
+    Sigma     = 0.
     JustSpec  = False
     SpecType  = 'stft'
     Bispectro = False
@@ -272,7 +277,7 @@ class BicAn:
     ZPad      = False
     Cross     = False
     Vector    = False
-    TZero     = 0
+    TZero     = 0.
 
     Figure    = 0
     AxHands   = [0,0,0]
@@ -680,6 +685,7 @@ class BicAn:
         f = self.fv/10**self.FScale
 
         im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
+        #im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto', vmin=-4, vmax=2)
         cax = PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
         if self.NewGUICax:
             self.CaxHands[1] = cax
@@ -891,6 +897,7 @@ class BicAn:
         # Save figure and axes with object
         self.Figure = fig
         self.AxHands = [ax1, ax2, ax3]
+        self.CaxHands = [None,None]
     
         # This is very primitive GUI stuff
         ####
@@ -932,6 +939,8 @@ class BicAn:
         if not qwer:
             print('Operation terminated by user.')
             self._RunBicAn = False
+        qwer.withdraw()
+        qwer.destroy()
         return         # Bail if that seems scary! 
 
 
@@ -1239,7 +1248,7 @@ def ApplyCWT(sig,samprate,sigma):
     nyq    = Nsig//2
 
     f0 = samprate/Nsig
-    freq_vec = np.arange(nyq)*f0
+    freq_vec = f0 * np.arange(nyq) # Frequency vector as calculated by FFT
     
     acwt = np.zeros((nyq,N))
     CWT  = np.zeros((nyq,nyq,N),dtype=complex)
@@ -1255,7 +1264,9 @@ def ApplyCWT(sig,samprate,sigma):
         for a in range(nyq):
             LoadBar(a,nyq)
             # Apply for each scale (read: frequency)
-            dum = np.fft.ifft(fft_sig * Psi(a+1))
+            dum = np.fft.ifft(fft_sig * Psi(a+1))              # Linear scale (f_a = a*f0)
+            #dum = np.fft.ifft(fft_sig * Psi( 2**((a+1)/12) ))   # Equal-tempered
+            #dum = np.fft.ifft(fft_sig * Psi( (a+1)/10 ) )
             CWT[a,:,k] = dum
 
             acwt[a,k]  = sum(abs(dum)) / len(dum)
