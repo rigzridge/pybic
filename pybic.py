@@ -50,6 +50,7 @@
 # subint    -> subinterval size in samples             [default :: 128]
 # sizewarn  -> warning for matrix size                 x[default :: True]
 # smooth    -> smooths FFT by n samples                x[default :: 1]
+# trispec   -> estimates trispectrum                   [default :: False]
 # tscale    -> scale for plotting time                 [default :: 0]
 # tzero     -> initial time                            [default :: 0]
 # verbose   -> allow printing of info structure        [default :: False]
@@ -58,8 +59,12 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/20/2023 ->
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/19/2023 -> Changed fonts to LaTeX (computer modern, 'cm'); added support
-# for nth-order polyspectrum with GetPolySpec(...)
+# for nth-order polyspectrum with GetPolySpec(...); included a few more test
+# signals ('quad_couple','cube_couple','coherence',&c); migrated tricoherence 
+# support from Matlab version; added local hill climb to Monte Carlo
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/04/2022 -> Fixed bug with CaxHands not being refreshed by PlotGUI(),
 # added a bit for limiting colorbar axes [think caxis(...)]-> still testing,
@@ -281,6 +286,7 @@ class BicAn:
     Detrend   = False
     ZPad      = False
     Cross     = False
+    Trispec   = False
     Vector    = False
     TZero     = 0.
 
@@ -292,15 +298,22 @@ class BicAn:
     tv = []   # Time vector
     fv = []   # Frequency vector
     ff = []   # Full frequency vector
+
     ft = []   # Fourier amplitudes
     sg = []   # Spectrogram (complex)
+
     cs = []   # Cross-spectrum
     cc = []   # Cross-coherence
     sg = []   # Coherence spectrum
+
     bs = []   # Bispectrum
     bc = []   # Bicoherence spectrum
     bp = []   # Biphase proxy
     bg = []   # Bispectrogram
+
+    ts = []   # Trispectrum
+    tc = []   # Tricoherence spectrum
+
     er = []   # Mean & std dev of FFT
     mb = []   # Mean b^2
     sb = []   # Std dev of b^2
@@ -371,7 +384,7 @@ class BicAn:
                 instr = inData.lower()
 
                 #### Should this be global?
-                siglist = ['demo','classic','tone','noisy','2tone','3tone','line','circle','fast_circle','cross_2tone','cross_3tone','cross_circle']
+                siglist = ['demo','classic','tone','noisy','2tone','3tone','4tone','line','circle','fast_circle','quad_couple','cube_couple','coherence','cross_2tone','cross_3tone','cross_circle']
                 if instr == 'input':
                     # Start getfile prompt
                     infile = FileDialog()
@@ -511,6 +524,8 @@ class BicAn:
 
         if not self.JustSpec:
             self.Bicoherence()
+            if self.Trispec:
+                self.Tricoherence()
 
         ##################
         end = time.time()
@@ -611,6 +626,25 @@ class BicAn:
         return
 
 
+    def Tricoherence(self):
+    # ------------------
+    # Calculate tricoherence
+    # ------------------       
+        dum = self.sg 
+        if self.SpecType == 'wave':
+            WTrim = 50*2
+            dum = self.sg[:,WTrim:-WTrim,:] 
+        if self._Nseries==1:
+            self.BicVec = [0, 0, 0, 0]
+            t2,T = SpecToTrispec(dum,self.BicVec,self.LilGuy)
+        else:
+            print('***WARNING*** :: Tricoherence currently only supports single time-series!')
+
+        self.ts = T
+        self.tc = t2
+        return
+
+
     def CalcMean(self,Ntrials=10):
     # ------------------
     # Calculate mean of b^2
@@ -642,28 +676,90 @@ class BicAn:
         return  
 
 
-    def MonteCarlo(self,N=2,Nrolls=1000,nout=10):
+    def MonteCarloMax(self,N=2,Nrolls=1000,critCoh=1,plot=False,verbose=False):
     # ------------------
     # Toss some dice and try to find maxima!
     # ------------------ 
+        start = time.time()
 
         bestFreqs = np.zeros(N)
-        bestb2 = 0
+        bestCoh = 0
+
+        flim = self.NFreq//2
+
+        if plot:
+            if N==2:
+                plt.plot([0,flim/2],   [0,flim/2],color=[0.5,0.5,0.5], lw=2.5)
+                plt.plot([flim/2,flim],[flim/2,0],color=[0.5,0.5,0.5], lw=2.5)
+                plt.plot([0,flim],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
+            elif N==3:
+                ax = plt.figure().add_subplot(projection='3d')
+                plt.plot([0,flim/3],     [0,flim/3],     [0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
+                plt.plot([flim,flim/3],  [0,flim/3],     [0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
+                plt.plot([flim/2,flim/3],[flim/2,flim/3],[0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
+                plt.plot([flim/2,0],     [flim/2,0],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
+                plt.plot([flim/2,flim],  [flim/2,0],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
+                plt.plot([0,flim],       [0,0],          [0,0],     color=[0.5,0.5,0.5], lw=2.5)
 
         for k in range(Nrolls):
             
-            freqs = ( NRandSumLessThanUnity(N) * self.NFreq//2 ).astype(int)
-            #freqs = freqs.tolist().sort()
+            freqs = ( NRandSumLessThanUnity(N) * flim ).astype(int)
+            freqs.sort()
+            freqs = freqs[::-1]
 
-            b2,_,_ = GetPolySpec(self.sg, freqs, False, self.LilGuy)
+            nCoh,_,_ = GetPolySpec(self.sg, freqs, self.LilGuy)
 
-            #print("Testing ", freqs, "b2 = ", b2)
+            if verbose:
+                print("Testing ", freqs, "nCoh = ", nCoh)
 
-            if b2>bestb2:
-                bestb2 = b2
+            if plot and nCoh>0.1:
+                if N==2:
+                    plt.plot(freqs[0],freqs[1],'o',color=[nCoh,nCoh,0])
+                elif N==3:
+                    ax.plot(freqs[0],freqs[1],freqs[2],'o',color=[nCoh,nCoh,0])
+
+            # if nCoh>bestCoh:
+            #     bestCoh = nCoh
+            #     bestFreqs = freqs
+
+            if nCoh>bestCoh:
+                bestCoh = nCoh
                 bestFreqs = freqs
 
-        return bestb2, bestFreqs, freqs
+                searchNeighbors = True if (min(bestFreqs)!=0 and max(bestFreqs)!=flim) else False
+
+                cnt = 0
+                while searchNeighbors:
+
+                    cnt += 1
+                    #if verbose:
+                    print("Searching neighbors... {}".format(cnt))
+
+                    bestCoh_old = bestCoh
+                    bestFreqs_old = bestFreqs
+
+                    for n in range(2*N):
+                        freqs = bestFreqs_old
+                        freqs[n//2] += 1 if n%2==0 else -1
+                        nCoh,_,_ = GetPolySpec(self.sg, freqs, self.LilGuy)
+                        if nCoh>bestCoh:
+                            bestCoh = nCoh
+                            bestFreqs = freqs
+                        
+                    if bestCoh==bestCoh_old:
+                        searchNeighbors = False
+
+            if bestCoh>critCoh:
+                break
+
+        if (N==2 or N==3) and plot:
+            plt.show()
+        print("Max found is nCoh = %.3f" % (bestCoh), " @ ", self.fv[bestFreqs]/10**self.FScale, "%sHz" % (ScaleToString(self.FScale)), "\nw/ indices ", bestFreqs)
+
+        end = time.time()
+        print('Complete! Process required %.5f s.' % (end-start))
+
+        return bestCoh, bestFreqs
 
 
 
@@ -683,7 +779,7 @@ class BicAn:
         for k in range(self._Nseries):
             ax.semilogy(f,self.ft[:,k],linewidth=self.LineWidth)
 
-        fstr = r'$f [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         ystr = r'$|\mathcal{%s}|^2$ [arb.]' % ('P' if self.SpecType=='stft' else 'W')
         PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
         ax.set_xlim(f[0], f[-1])
@@ -708,7 +804,7 @@ class BicAn:
             cax = self.CaxHands[1]
 
         tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(self.TScale))
-        fstr = r'$f [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        fstr = r'$f\,\, [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         cbarstr = r'$\log_{10}|\mathcal{%s}(t,f)|^2$' % ('P' if self.SpecType=='stft' else 'W')
 
         t = self.tv/10**self.TScale
@@ -758,8 +854,8 @@ class BicAn:
             im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
             ax.set_ylim(f[0], f[-1])
         
-        fstr1 = r'$f_1 [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        fstr2 = r'$f_2 [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        fstr1 = r'$f_1\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        fstr2 = r'$f_2\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         cax = PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
         if self.NewGUICax:
             self.CaxHands[0] = cax
@@ -812,11 +908,16 @@ class BicAn:
         self.PlotType = old_plot
 
 
-    def PlotPointOut(self,X,Y):
+    def PlotPointOut(self,X,Y,IsFreq=False):
     # ------------------
     # Plot value of b^2 over time
     # ------------------
         fig, ax = plt.subplots()
+
+        if IsFreq:    
+            for k in range(len(X)):
+                _,X[k] = arrmin(abs( dum - X[k] ))
+                _,Y[k] = arrmin(abs( dum - Y[k] ))
 
         fLocX = X
         fLocY = Y
@@ -1188,41 +1289,69 @@ def TestSignal(whatsig):
     fS   = 200
     tend = 100
     noisy = 2
+    f1 = 19
+    f2 = 45
     dum = whatsig.lower()
     if dum == 'classic':
-        inData,t,_ = SignalGen(fS,tend,1,45,6,1,22,10,1,1/20,noisy)
+        inData,t,_ = SignalGen(fS,tend,1,f2,6,1,f1,10,1,1/20,noisy)
     elif dum == 'tone':
-        inData,t,_ = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
+        inData,t,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
     elif dum == 'noisy':
-        inData,t,_ = SignalGen(fS,tend,1,22,0,0,0,0,0,0,5*noisy)
+        inData,t,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,5*noisy)
     elif dum == '2tone':
-        inData,t,_ = SignalGen(fS,tend,1,22,0,1,45,0,0,0,noisy)
+        inData,t,_ = SignalGen(fS,tend,1,f1,0,1,f2,0,0,0,noisy)
     elif dum == '3tone':
-        inData,t,_ = SignalGen(fS,tend,1,22,0,1,45,0,1,0,noisy)
+        inData,t,_ = SignalGen(fS,tend,1,f1,0,1,f2,0,1,0,noisy)
+    elif dum == '4tone':
+        # 13,17,54
+        x1,t,_ = SignalGen(fS,tend,1,15,0,0,0,0,0,0,0)
+        x2,_,_ = SignalGen(fS,tend,1,25,0,0,0,0,0,0,0)
+        x3,_,_ = SignalGen(fS,tend,1,45,0,0,0,0,0,0,0)
+        x4,_,_ = SignalGen(fS,tend,1,15+25+45,0,0,0,0,0,0,0)
+        nz,_,_ = SignalGen(fS,tend,0,0,0,0,0,0,0,0,noisy)
+        inData = x1 + x2 + x3 + x4 + nz
     elif dum == 'line':
-        inData,t,_ = SignalGen(fS,tend,1,22,0,1,45,10,1,1/20,noisy)
+        inData,t,_ = SignalGen(fS,tend,1,f1,0,1,f2,10,1,1/20,noisy)
     elif dum == 'circle':
-        inData,t,_ = SignalGen(fS,tend,1,22,10,1,45,10,1,1/20,noisy)
+        inData,t,_ = SignalGen(fS,tend,1,f1,10,1,f2,10,1,1/20,noisy)
     elif dum == 'fast_circle':
-        inData,t,_ = SignalGen(fS,tend,1,22,5,1,45,5,1,5/20,noisy)
+        inData,t,_ = SignalGen(fS,tend,1,f1,5,1,f2,5,1,5/20,noisy)
+    elif dum == 'quad_couple':
+        x,t,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,0)
+        y,_,_ = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,0)
+        nz,_,_ = SignalGen(fS,tend,0,0,0,0,0,0,0,0,noisy)
+        inData = x + y + x * y + nz
+    elif dum == 'cube_couple':
+        x,t,_ = SignalGen(fS,tend,1,13,0,0,0,0,0,0,0)
+        y,_,_ = SignalGen(fS,tend,1,17,0,0,0,0,0,0,0)
+        z,_,_ = SignalGen(fS,tend,1,54,0,0,0,0,0,0,0)
+        nz,_,_ = SignalGen(fS,tend,0,0,0,0,0,0,0,0,noisy)
+        inData = x + y + z + x*y*z + nz
+    elif dum == 'coherence':
+        x,t,_ = bic.SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
+        y,_,_ = bic.SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
+        z,_,_ = bic.SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
+        inData = np.zeros( (len(t), 2) )
+        inData[:,0] = x[:,0]
+        inData[:,1] = y[:,0] + z[:,0]
     elif dum == 'cross_2tone':
-        x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
-        y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
+        x,t,_  = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
+        y,_,_  = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
         inData = np.zeros( (len(t), 2) )
         inData[:,0] = x[:,0]
         inData[:,1] = x[:,0] + y[:,0]
     elif dum == 'cross_3tone':
-        x,t,_  = SignalGen(fS,tend,1,22,0,0,0,0,0,0,noisy)
-        y,_,_  = SignalGen(fS,tend,1,45,0,0,0,0,0,0,noisy)
-        z,_,_  = SignalGen(fS,tend,1,67,0,0,0,0,0,0,noisy)
+        x,t,_  = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
+        y,_,_  = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
+        z,_,_  = SignalGen(fS,tend,1,f1+f2,0,0,0,0,0,0,noisy)
         inData = np.zeros( (len(t), 3) )
         inData[:,0] = x[:,0] 
         inData[:,1] = y[:,0] 
         inData[:,2] = z[:,0]
     elif dum == 'cross_circle':
-        x,t,_  = SignalGen(fS,tend,1,22,10,0,0,0,0,1/20,noisy)
-        y,_,_  = SignalGen(fS,tend,0,0 ,0 ,1,45,10,0,1/20,noisy)
-        z,_,_  = SignalGen(fS,tend,0,22,10,0,45,10,1,1/20,noisy)
+        x,t,_  = SignalGen(fS,tend,1,f1,10,0,0,0,0,1/20,noisy)
+        y,_,_  = SignalGen(fS,tend,0,0 ,0 ,1,f2,10,0,1/20,noisy)
+        z,_,_  = SignalGen(fS,tend,0,f1,10,0,f2,10,1,1/20,noisy)
         inData = np.zeros( (len(t), 3) )
         inData[:,0] = x[:,0]
         inData[:,1] = y[:,0]
@@ -1397,6 +1526,54 @@ def SpecToCrossBispec(spec,v,lilguy):
     return b2,B
 
 
+def SpecToTrispec(spec,v,lilguy):
+# ------------------
+# Turns spectrogram to t^2
+# ------------------
+    nfreq,slices,_ = spec.shape
+
+    lim = nfreq
+
+    T  = np.zeros((lim//2,lim,lim//3), dtype=complex)
+    t2 = np.zeros((lim//2,lim,lim//3))
+    
+    print('Calculating tricoherence...      ')     
+    for j in range(lim//2):
+        LoadBar(j,lim//2);
+        
+        for k in np.arange(j,lim-j):
+
+            for n in range(lim//3):
+
+                if j+k+n<lim and n<=j and n<=k:
+            
+                    p1 = spec[k,:,v[0]]
+                    p2 = spec[j,:,v[1]]
+                    p3 = spec[n,:,v[2]]
+                    s  = spec[j+k+n,:,v[3]]
+
+                    # See Kravtchenko-Berejnoi et al. [1995]
+                    # Ti   = (p1) * (p2) * np.conj(p3) * conj(s);
+                    # e123 = abs((p1) * (p2) * conj(p3))**2;
+                    # e4   = abs(s)**2;  
+
+                    Ti   = p1 * p2 * p3 * np.conj(s)
+                    e123 = abs(p1 * p2 * p3)**2
+                    e4   = abs(s)**2
+
+                    Tjkn = sum(Ti)                    
+                    E123 = sum(e123)             
+                    E4   = sum(e4)                     
+
+                    t2[j,k,n] = ( abs(Tjkn)**2 ) / ( E123*E4 + lilguy ) 
+                    T[j,k,n]  = Tjkn
+
+    T = T/slices
+    print('\b\b\b^]\n')     
+
+    return t2,T              
+
+
 def GetBispec(spec,v,lilguy,j,k,rando):
 # ------------------
 # Calculates the bicoherence of a single (f1,f2) value
@@ -1447,14 +1624,10 @@ def SpecToCoherence(spec,lilguy):
     return C,cc,xx 
 
 
-def GetPolySpec(spec,f,rando,lilguy):
+def GetPolySpec(spec,f,lilguy,rando=False):
 # ------------------
 # Calculates the nth-order coherence of a given (f1,f2,...,fn) value
 # ------------------
-
-    #p1 = spec[k,:,v[0]]
-    #p2 = spec[j,:,v[1]]
-    #s  = spec[j+k,:,v[2]]
 
     sumFreq = sum(f)
 
@@ -1464,7 +1637,7 @@ def GetPolySpec(spec,f,rando,lilguy):
     if rando:
         s  = abs(s) * np.exp( 2j*np.pi* (2*np.random.random( s.shape  ) - 1) )
 
-    nSpec_i = np.ones( s.shape , dtype='complex')
+    nSpec_i = np.ones( s.shape , dtype=complex)
 
     for k in range( len(f) ):
         p = getCoeff( f[k] )
