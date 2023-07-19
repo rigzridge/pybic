@@ -58,6 +58,9 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/19/2023 -> Changed fonts to LaTeX (computer modern, 'cm'); added support
+# for nth-order polyspectrum with GetPolySpec(...)
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/04/2022 -> Fixed bug with CaxHands not being refreshed by PlotGUI(),
 # added a bit for limiting colorbar axes [think caxis(...)]-> still testing,
 # fixed root window issue with SizeWarn, fiddled with nonlinear CWT scales,
@@ -218,6 +221,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from tkinter import *
 #import pandas as pd
+
+plt.rcParams['mathtext.fontset'] = 'cm'
 
 
 # Define classes for bispec script
@@ -386,7 +391,7 @@ class BicAn:
                     root.withdraw()
                     if messagebox.askokcancel('Question','Run the "{}" demo?'.format(instr), master=root):
                         sig,_,fS = TestSignal(instr)
-                        self.ParseInput(sig,{'SampRate':fS})  
+                        self.ParseInput(sig,{'SampRate':float(fS)})  
                     root.destroy()
                 else:
                     print('Hmmm. That string isn`t supported yet... Try "demo".')   
@@ -606,7 +611,7 @@ class BicAn:
         return
 
 
-    def CalcMean(self,Ntrials):
+    def CalcMean(self,Ntrials=10):
     # ------------------
     # Calculate mean of b^2
     # ------------------
@@ -637,6 +642,31 @@ class BicAn:
         return  
 
 
+    def MonteCarlo(self,N=2,Nrolls=1000,nout=10):
+    # ------------------
+    # Toss some dice and try to find maxima!
+    # ------------------ 
+
+        bestFreqs = np.zeros(N)
+        bestb2 = 0
+
+        for k in range(Nrolls):
+            
+            freqs = ( NRandSumLessThanUnity(N) * self.NFreq//2 ).astype(int)
+            #freqs = freqs.tolist().sort()
+
+            b2,_,_ = GetPolySpec(self.sg, freqs, False, self.LilGuy)
+
+            #print("Testing ", freqs, "b2 = ", b2)
+
+            if b2>bestb2:
+                bestb2 = b2
+                bestFreqs = freqs
+
+        return bestb2, bestFreqs, freqs
+
+
+
     ## Plot methods
     def PlotPowerSpec(self,*args):
     # ------------------
@@ -651,9 +681,9 @@ class BicAn:
         f = self.fv/10**self.FScale
 
         for k in range(self._Nseries):
-            ax.semilogy(f,self.ft[:,k]**2,linewidth=self.LineWidth)
+            ax.semilogy(f,self.ft[:,k],linewidth=self.LineWidth)
 
-        fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
+        fstr = r'$f [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         ystr = r'$|\mathcal{%s}|^2$ [arb.]' % ('P' if self.SpecType=='stft' else 'W')
         PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
         ax.set_xlim(f[0], f[-1])
@@ -677,14 +707,16 @@ class BicAn:
             ax  = args[1]
             cax = self.CaxHands[1]
 
-        tstr = r'Time [%ss]' % (ScaleToString(self.TScale))
-        fstr = r'$f$ [%sHz]' % (ScaleToString(self.FScale))
+        tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(self.TScale))
+        fstr = r'$f [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         cbarstr = r'$\log_{10}|\mathcal{%s}(t,f)|^2$' % ('P' if self.SpecType=='stft' else 'W')
 
         t = self.tv/10**self.TScale
         f = self.fv/10**self.FScale
 
         im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
+
+
         #im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto', vmin=-4, vmax=2)
         cax = PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
         if self.NewGUICax:
@@ -726,8 +758,8 @@ class BicAn:
             im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
             ax.set_ylim(f[0], f[-1])
         
-        fstr1 = r'$f_1$ [%sHz]' % (ScaleToString(self.FScale))
-        fstr2 = r'$f_2$ [%sHz]' % (ScaleToString(self.FScale))
+        fstr1 = r'$f_1 [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        fstr2 = r'$f_2 [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         cax = PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
         if self.NewGUICax:
             self.CaxHands[0] = cax
@@ -819,10 +851,10 @@ class BicAn:
             intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
             # exp dist -> (1/m)exp(-x/m)
             m = np.mean(g)
-            plt.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none', label='randomized')
+            plt.semilogy(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none', label='randomized')
             # More accurate distibution... Just more complicated! (Get to it later...)
             #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
-            plt.plot(b2vec, (1/m)*np.exp(-b2vec/m), linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
+            plt.semilogy(b2vec, (1/m)*np.exp(-b2vec/m), linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
 
             PlotLabels(fig,['$b^2$' + xstr,'Probability density'], self.FontSize, self.CbarNorth, ax, None, None)
 
@@ -847,6 +879,13 @@ class BicAn:
                         plt.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k])
                 elif self.PlotType == 'angle':
                     plt.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', label=pntstr[k])
+
+                    Nang = 20
+                    angvec = np.linspace(-1,1,Nang)
+                    cnt,_  = np.histogram(Bi/np.pi, bins=Nang, range=(-1,1) )
+                    ####plt.plot(angvec,cnt)
+
+                    ####plt.plot(np.real(Bi),np.imag(Bi))
 
             plt.xlim([dumt[0],dumt[-1]])
             plt.grid(True)    
@@ -1133,6 +1172,10 @@ def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
     y = Ay*np.sin(2*np.pi*(fy*t + dfy))              # f2
     z = Az*np.sin(2*np.pi*(fx*t + fy*t + dfx + dfy)) # f1 + f2
 
+    # New addition for quadratic coupling tests
+    #phi = np.pi/4
+    #z = Az*np.abs(np.sin(2*np.pi*Ff*t))**4 * x*y + 0*np.sin(2*np.pi*(fx*t + fy*t + phi))
+
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
     #sig = np.reshape(sig, ( len(sig), 1 )) # Output Nx1 numpy array
     return sig,t,fS
@@ -1221,16 +1264,16 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
             DFT = np.fft.fft(Ym)/nfreq  # Limit and normalize by vector length
 
-            fft_coeffs[0:lim,k] = DFT[0:lim]  # Get interested parties
-            dumft    = abs(fft_coeffs[:,k])       # Dummy for abs(coeffs)
+            fft_coeffs[0:lim,k] = DFT[0:lim]     # Get interested parties
+            dumft    = abs(fft_coeffs[:,k])**2   # Dummy for abs(coeffs)^2
             err[m,k] = sum(dumft)/len(dumft)     # Mean of PSD slice
 
             if err[m,k]>=errlim:
                 fft_coeffs[:,k] = 0*fft_coeffs[:,k] # Blank if mean excessive
                 Ntoss += 1
 
-            afft[:,k]  += dumft                   # Welch's PSD
-            spec[:,m,k] = fft_coeffs[:,k]         # Build spectrogram
+            afft[:,k]  += dumft                  # Welch's PSD
+            spec[:,m,k] = fft_coeffs[:,k]        # Build spectrogram
 
     print('\b\b\b^]\n')
     
@@ -1264,12 +1307,12 @@ def ApplyCWT(sig,samprate,sigma):
         for a in range(nyq):
             LoadBar(a,nyq)
             # Apply for each scale (read: frequency)
-            dum = np.fft.ifft(fft_sig * Psi(a+1))              # Linear scale (f_a = a*f0)
+            dum = np.fft.ifft(fft_sig * Psi(a+1))                # Linear scale (f_a = a*f0)
             #dum = np.fft.ifft(fft_sig * Psi( 2**((a+1)/12) ))   # Equal-tempered
             #dum = np.fft.ifft(fft_sig * Psi( (a+1)/10 ) )
             CWT[a,:,k] = dum
 
-            acwt[a,k]  = sum(abs(dum)) / len(dum)
+            acwt[a,k]  = sum(abs(dum)**2) / len(dum)
         print('\b\b\b^]\n')
 
     time_vec = np.arange(0,Nsig,2)/samprate
@@ -1404,6 +1447,46 @@ def SpecToCoherence(spec,lilguy):
     return C,cc,xx 
 
 
+def GetPolySpec(spec,f,rando,lilguy):
+# ------------------
+# Calculates the nth-order coherence of a given (f1,f2,...,fn) value
+# ------------------
+
+    #p1 = spec[k,:,v[0]]
+    #p2 = spec[j,:,v[1]]
+    #s  = spec[j+k,:,v[2]]
+
+    sumFreq = sum(f)
+
+    getCoeff = lambda i: np.real( spec[abs( i ),:,0] ) + 1j*np.sign( i )*np.imag( spec[abs( i ),:,0] )
+
+    s = np.conj( getCoeff(sumFreq) )
+    if rando:
+        s  = abs(s) * np.exp( 2j*np.pi* (2*np.random.random( s.shape  ) - 1) )
+
+    nSpec_i = np.ones( s.shape , dtype='complex')
+
+    for k in range( len(f) ):
+        p = getCoeff( f[k] )
+
+        if rando:
+            p = abs(p)*np.exp( 2j*np.pi* (2*np.random.random( p.shape ) - 1) )
+
+        nSpec_i  *= p
+
+    e1 = abs( nSpec_i )**2
+    e2 = abs( s )**2
+
+    nSpec  = sum( nSpec_i * s )                 
+    E1 = sum( e1 )            
+    E2 = sum( e2 )                      
+
+    nCoh = ( abs(nSpec)**2 ) / ( E1*E2 + lilguy )
+    
+    nSpec /= len( nSpec_i )
+    return nCoh,nSpec,nSpec_i*s
+
+
 def HannWindow(N):
 # ------------------
 # Hann window
@@ -1473,6 +1556,20 @@ def arrmin(arr):
     m = min(arr)
     index = arr.tolist().index( m )
     return m,index
+
+def NRandSumLessThanUnity(n):
+# ------------------
+# Outputs n numbers whose sum is < 1
+# ------------------
+    foundIt = False
+    while not foundIt:
+        
+        dum = np.random.random(n)
+        #dum.sort()
+
+        if sum(dum)<=1:
+            foundIt = True
+            return dum
 
 
 # All of this is my attempt at a Tkinter GUI, prob needs to be edited and def psuedocode, will
