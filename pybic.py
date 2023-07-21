@@ -359,7 +359,7 @@ class BicAn:
 
             if attr=='SubInt':
                 self.FreqRes = self.MaxRes
-                print('***WARNING*** :: Resolution set to maximum!')
+                print('***NOTE*** :: Resolution set to maximum!')
 
     # Dependent properties
     @property
@@ -408,7 +408,10 @@ class BicAn:
                 instr = inData.lower()
 
                 #### Should this be global?
-                siglist = ['demo','classic','tone','noisy','2tone','3tone','4tone','line','circle','fast_circle','quad_couple','cube_couple','coherence','cross_2tone','cross_3tone','cross_circle']
+                siglist = ['demo','classic','tone','noisy','2tone','3tone','4tone',
+                            'line','circle','fast_circle','quad_couple','cube_couple',
+                            'coherence','cross_2tone','cross_3tone','cross_circle',
+                            '3tone_short','cross_3tone_short','helix']
                 if instr == 'input':
                     # Start getfile prompt
                     # root = tk.Tk()
@@ -894,12 +897,11 @@ class BicAn:
         return      
 
 
-    def PlotTrispec(self,Tval):
+    def PlotTrispec(self,Tval,colorTricoh=True):
     # ------------------
     # Plot trispectrum
     # ------------------
 
-        cbarstr = r'$t^2(f_1,f_2,f_3)$'
         f = self.fv / 10**self.FScale
         lim = len(f)
         lim2 = lim//2
@@ -919,11 +921,14 @@ class BicAn:
         T = self.ts.flatten()
         q = t>Tval
 
+        dum = t[q] if colorTricoh else np.angle(T[q])
+        cbarstr = r'$t^2(f_1,f_2,f_3)$' if colorTricoh else r'$\gamma(f_1,f_2,f_3)$'
+
         #ax = plt.figure().add_subplot(projection='3d')
         #fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
-        im = ax.scatter(x[q],y[q],z[q],c=np.angle(T[q]),cmap=self.CMap)
+        im = ax.scatter(x[q],y[q],z[q],c=dum,cmap=self.CMap)
 
         #isosurface(f(1:lim),f(1:lim2),f(1:lim3),bic.tc,Tval,angle(bic.ts))
 
@@ -1342,7 +1347,8 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
         label.set_fontweight(tickweight)
     return cax
 
-def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
+
+def SignalGen(fS=1,tend=100,Ax=1,fx=1,Afx=0,Ay=0,fy=0,Afy=0,Az=0,Ff=0,noisy=2):
 # ------------------
 # Provides 3-osc FM test signal
 # ------------------
@@ -1393,69 +1399,78 @@ def TestSignal(whatsig):
     f2 = 45
     dum = whatsig.lower()
     if dum == 'classic':
-        inData,t,_ = SignalGen(fS,tend,1,f2,6,1,f1,10,1,1/20,noisy)
+        inData,t,_ = SignalGen(fS,tend,fx=f2,Afx=6,Ay=1,fy=f1,Afy=10,Az=1,Ff=1/20)
     elif dum == 'tone':
-        inData,t,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
+        inData,t,_ = SignalGen(fS,tend,fx=f1)
     elif dum == 'noisy':
-        inData,t,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,5*noisy)
+        inData,t,_ = SignalGen(fS,tend,fx=f1,noisy=5*noisy)
     elif dum == '2tone':
-        inData,t,_ = SignalGen(fS,tend,1,f1,0,1,f2,0,0,0,noisy)
-    elif dum == '3tone':
-        inData,t,_ = SignalGen(fS,tend,1,f1,0,1,f2,0,1,0,noisy)
+        inData,t,_ = SignalGen(fS,tend,fx=f1,Ay=1,fy=f2)
+    elif dum in ['3tone','3tone_short']:
+        tend = tend if dum=='3tone' else 5
+        inData,t,_ = SignalGen(fS,tend,fx=f1,Ay=1,fy=f2,Az=1)
     elif dum == '4tone':
-        # 13,17,54
-        x1,t,_ = SignalGen(fS,tend,1,15,0,0,0,0,0,0,0)
-        x2,_,_ = SignalGen(fS,tend,1,25,0,0,0,0,0,0,0)
-        x3,_,_ = SignalGen(fS,tend,1,45,0,0,0,0,0,0,0)
-        x4,_,_ = SignalGen(fS,tend,1,15+25+45,0,0,0,0,0,0,0)
-        nz,_,_ = SignalGen(fS,tend,0,0,0,0,0,0,0,0,noisy)
+        # old was 13,17,54
+        x1,t,_ = SignalGen(fS,tend,fx=15,noisy=0)
+        x2,_,_ = SignalGen(fS,tend,fx=25,noisy=0)
+        x3,_,_ = SignalGen(fS,tend,fx=45,noisy=0)
+        x4,_,_ = SignalGen(fS,tend,fx=15+25+45,noisy=0)
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x1 + x2 + x3 + x4 + nz
     elif dum == 'line':
-        inData,t,_ = SignalGen(fS,tend,1,f1,0,1,f2,10,1,1/20,noisy)
+        inData,t,_ = SignalGen(fS,tend,fx=f1,Ay=1,fy=f2,Afy=10,Az=1,Ff=1/20)
     elif dum == 'circle':
-        inData,t,_ = SignalGen(fS,tend,1,f1,10,1,f2,10,1,1/20,noisy)
+        inData,t,_ = SignalGen(fS,tend,fx=f1,Afx=10,Ay=1,fy=f2,Afy=10,Az=1,Ff=1/20)
     elif dum == 'fast_circle':
-        inData,t,_ = SignalGen(fS,tend,1,f1,5,1,f2,5,1,5/20,noisy)
+        tend = 20
+        inData,t,_ = SignalGen(fS,tend,fx=f1,Afx=5,Ay=1,fy=f2,Afy=5,Az=1,Ff=5/20)
     elif dum == 'quad_couple':
-        x,t,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,0)
-        y,_,_ = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,0)
-        nz,_,_ = SignalGen(fS,tend,0,0,0,0,0,0,0,0,noisy)
+        x,t,_ = SignalGen(fS,tend,fx=f1,noisy=0)
+        y,_,_ = SignalGen(fS,tend,fx=f2,noisy=0)
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x + y + x * y + nz
     elif dum == 'cube_couple':
-        x,t,_ = SignalGen(fS,tend,1,13,0,0,0,0,0,0,0)
-        y,_,_ = SignalGen(fS,tend,1,17,0,0,0,0,0,0,0)
-        z,_,_ = SignalGen(fS,tend,1,54,0,0,0,0,0,0,0)
-        nz,_,_ = SignalGen(fS,tend,0,0,0,0,0,0,0,0,noisy)
+        x,t,_ = SignalGen(fS,tend,fx=13,noisy=0)
+        y,_,_ = SignalGen(fS,tend,fx=17,noisy=0)
+        z,_,_ = SignalGen(fS,tend,fx=54,noisy=0)
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x + y + z + x*y*z + nz
     elif dum == 'coherence':
-        x,t,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
-        y,_,_ = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
-        z,_,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
+        x,t,_ = SignalGen(fS,tend,fx=f1)
+        y,_,_ = SignalGen(fS,tend,fx=f2)
+        z,_,_ = SignalGen(fS,tend,fx=f1)
         inData = np.zeros( (len(t), 2) )
         inData[:,0] = x
         inData[:,1] = y + z
     elif dum == 'cross_2tone':
-        x,t,_  = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
-        y,_,_  = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
+        x,t,_ = SignalGen(fS,tend,fx=f1)
+        y,_,_ = SignalGen(fS,tend,fx=f2)
         inData = np.zeros( (len(t), 2) )
         inData[:,0] = x
         inData[:,1] = x + y
-    elif dum == 'cross_3tone':
-        x,t,_  = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
-        y,_,_  = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
-        z,_,_  = SignalGen(fS,tend,1,f1+f2,0,0,0,0,0,0,noisy)
+    elif dum in ['cross_3tone','cross_3tone_short']:
+        tend = tend if dum=='cross_3tone' else 5
+        x,t,_ = SignalGen(fS,tend,fx=f1)
+        y,_,_ = SignalGen(fS,tend,fx=f2)
+        z,_,_  = SignalGen(fS,tend,1,fx=f1+f2)
         inData = np.zeros( (len(t), 3) )
         inData[:,0] = x 
         inData[:,1] = y 
         inData[:,2] = z
     elif dum == 'cross_circle':
-        x,t,_  = SignalGen(fS,tend,1,f1,10,0,0,0,0,1/20,noisy)
-        y,_,_  = SignalGen(fS,tend,0,0 ,0 ,1,f2,10,0,1/20,noisy)
-        z,_,_  = SignalGen(fS,tend,0,f1,10,0,f2,10,1,1/20,noisy)
+        x,t,_  = SignalGen(fS,tend,fx=f1,Afx=10,Ff=1/20)
+        y,_,_  = SignalGen(fS,tend,Ax=0,fx=0,Ay=1,fy=f2,Afy=10,Ff=1/20)
+        z,_,_  = SignalGen(fS,tend,Ax=0,fx=f1,Afx=10,Ay=0,fy=f2,Afy=10,Az=1,Ff=1/20)
         inData = np.zeros( (len(t), 3) )
         inData[:,0] = x
         inData[:,1] = y
         inData[:,2] = z
+    elif dum == 'helix':
+        x,t,_  = SignalGen(fS,tend,fx=f1,Afx=10,Ff=1/20,noisy=0)
+        y,_,_  = SignalGen(fS,tend,Ax=0,fx=0,Ay=1,fy=f2,Afy=10,Ff=1/20,noisy=0)
+        z,_,_  = SignalGen(fS,tend,Ax=0,fx=f1,Afx=10,Ay=0,fy=f2,Afy=10,Az=1,Ff=1/20,noisy=0)
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
+        inData = x + y + z + x*y*z + nz
     else:
         print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(whatsig)) 
         inData,t,fS = SignalGen(fS,tend,1,22,0,0,0,0,0,0,0)
