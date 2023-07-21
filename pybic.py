@@ -30,6 +30,7 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # autoscale -> autoscaling in figures                  [default :: False]
 # bispectro -> computes bispectrogram                  x[default :: False]
+# calccoi   -> cone of influence                       [default :: False]
 # cbarnorth -> control bolorbar location               [default :: True]
 # cmap      -> adjust colormap                         [default :: 'viridis']
 # dealias   -> applies antialiasing (LP) filter        x[default :: False]
@@ -59,12 +60,18 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 7/20/2023 ->
+# 7/20/2023 -> Fixed issue with reference in MonteCarloMax(); adjusted 'input'
+# option to accommodate input dialog [using filedialog.askopenfilename()];
+# changed default sigma to pi*(...) instead of 5*(...); lots of small fixes;
+# finally got tick issues figured out with list of labels; removed small 
+# matplotlib toggles, now use SHIFT + {1,2,3} = {!,@,#} to switch for cross;
+# 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/19/2023 -> Changed fonts to LaTeX (computer modern, 'cm'); added support
 # for nth-order polyspectrum with GetPolySpec(...); included a few more test
 # signals ('quad_couple','cube_couple','coherence',&c); migrated tricoherence 
-# support from Matlab version; added local hill climb to Monte Carlo
+# support from Matlab version; added local hill climb to Monte Carlo; added 
+# flag to PlotPointOut() input to allow inputting freqs directly
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/04/2022 -> Fixed bug with CaxHands not being refreshed by PlotGUI(),
 # added a bit for limiting colorbar axes [think caxis(...)]-> still testing,
@@ -229,7 +236,6 @@ from tkinter import *
 
 plt.rcParams['mathtext.fontset'] = 'cm'
 
-
 # Define classes for bispec script
 
 class BicAn:
@@ -259,6 +265,7 @@ class BicAn:
     Step      = 128
     Window    = 'hann'       
     Sigma     = 0.
+    CalcCOI   = False
     JustSpec  = False
     SpecType  = 'stft'
     Bispectro = False
@@ -277,6 +284,7 @@ class BicAn:
     CbarNorth = True
     PlotType  = 'bicoh'
     ScaleAxes = 'manual'
+    TickLabel = 'normal'
     LineWidth = 2
     FontSize  = 20
     PlotSlice = 0
@@ -330,6 +338,29 @@ class BicAn:
             self.ProcessData()
         return
 
+    def __setattr__(self, attr, val):
+        if not attr in dir(BicAn):
+            print('***WARNING*** :: BicAn class has no attribute {}!'.format(attr))
+            # Check case issue
+            dum_dir = dir(self)
+            attrLow = attr.lower()
+            lower_list = [dum.lower() for dum in dum_dir]
+            if attrLow in lower_list:
+                k = lower_list.index(attrLow)
+                print('Did you mean {}?'.format(dum_dir[k]))
+
+        else:
+            # if isinstance(val, type( eval('self.{}'.format(attr)) ) ):
+            #     print('Same class!')
+            # else:
+            #     print('Wrong class!')
+
+            self.__dict__[attr] = val
+
+            if attr=='SubInt':
+                self.FreqRes = self.MaxRes
+                print('***WARNING*** :: Resolution set to maximum!')
+
     # Dependent properties
     @property
     def MaxRes(self):  # Maximum resolution
@@ -364,19 +395,12 @@ class BicAn:
         print('Checking inputs...') 
 
         if len(kwargs)==0:
-            if isinstance(inData,type(BicAn)):
-                # If object, output or go to GUI
-                # HAS BUGS!
-                print('Input is BicAn! ')
-                #self = inData 
-                self._RunBicAn = False
-
-            elif isinstance(inData,type(np.array(0))):
+            if isinstance(inData,np.ndarray):
                 # If array input, use normalized frequencies
                 self.Raw       = inData
                 self.FreqRes   = 1/self.SubInt    
                 self._NormToNyq = True
-                self.ParseInput(sig,{'SampRate':1})
+                self.ParseInput(inData,{'SampRate':1.})
 
             elif isinstance(inData,str):
                 # Check string inputs
@@ -387,14 +411,12 @@ class BicAn:
                 siglist = ['demo','classic','tone','noisy','2tone','3tone','4tone','line','circle','fast_circle','quad_couple','cube_couple','coherence','cross_2tone','cross_3tone','cross_circle']
                 if instr == 'input':
                     # Start getfile prompt
+                    # root = tk.Tk()
+                    # root.withdraw()
+                    # infile = filedialog.askopenfilename()
                     infile = FileDialog()
-                    # Try comma-separated? ### BUGS!
-                    #sig = np.loadtxt(infile, delimiter=',') #old method
 
-                    sig  = pd.read_csv(infile, sep=r'\s*(?:\||\#|\,)\s*', skiprows=0, dtype = 'float', engine='python') #requires csv files   #as is requires a hard coded number of rows to skip, looking for solutions to auto detect
-                    cols = sig.columns
-                    sig  = sig[cols[1]]  #should have read in a file and separated every type of delimiter and passed the second column (assuming thats data)
-
+                    sig = np.loadtxt(infile) 
                     self.ParseInput(sig,{}) 
 
                 elif instr in siglist:
@@ -410,13 +432,13 @@ class BicAn:
                     print('Hmmm. That string isn`t supported yet... Try "demo".')   
 
             else:
-                print('***ERROR*** :: Input must be BicAn object, array, or valid option! "{}" class is not supported.'.format(type(inData)))
+                print('***ERROR*** :: Input must be a numpy array or valid option! "{}" class is not supported.'.format(type(inData)))
                 error()
         else:
             
             sz = inData.shape
             # Check if 1 or 2D numpy array
-            if len(sz)<3 and isinstance( inData, type(np.array(0)) ):
+            if len(sz)<3 and isinstance( inData, np.ndarray ):
 
                 N = max(sz)                     # Get long dimension
                 if len(sz)==1:                  # Check vector
@@ -565,7 +587,7 @@ class BicAn:
     # Wavelet method
     # ------------------
         if self.Sigma == 0: # Check auto
-            self.Sigma = 5*self.Samples/self.SampRate
+            self.Sigma = np.pi*self.Samples/self.SampRate
 
         if self.Detrend:
             for k in range(self._Nseries):
@@ -580,6 +602,16 @@ class BicAn:
             self.SizeWarnPrompt(self.Samples)
 
         CWT,acwt,f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma)
+
+        if self.CalcCOI:
+            nz = np.zeros((len(self.Processed),1))
+            nz[0,:] = 1
+            nz[-1,:] = 1
+            nzCWT,_,_,_ = ApplyCWT(nz,self.SampRate,self.Sigma)
+            for k in range(self._Nseries):
+                coiMask = ( (abs(nzCWT)/np.max(abs(nzCWT)) ) < np.exp(-2) )
+                CWT[:,:,k] = CWT[:,:,k] * coiMask[:,:,0]
+                acwt[:,k]  = np.mean(abs(CWT[:,:,k])**2,1)
 
         self.tv = t + self.TZero
         self.fv = f
@@ -607,7 +639,7 @@ class BicAn:
     # Calculate bicoherence
     # ------------------       
         dum = self.sg 
-        if self.SpecType == 'wave':
+        if self.SpecType == 'wave' and not self.CalcCOI:
             WTrim = 50*2
             dum = self.sg[:,WTrim:-WTrim,:] 
         if self._Nseries==1:
@@ -631,7 +663,7 @@ class BicAn:
     # Calculate tricoherence
     # ------------------       
         dum = self.sg 
-        if self.SpecType == 'wave':
+        if self.SpecType == 'wave' and not self.CalcCOI:
             WTrim = 50*2
             dum = self.sg[:,WTrim:-WTrim,:] 
         if self._Nseries==1:
@@ -682,10 +714,11 @@ class BicAn:
     # ------------------ 
         start = time.time()
 
-        bestFreqs = np.zeros(N)
         bestCoh = 0
 
         flim = self.NFreq//2
+
+        vals = np.zeros(N)
 
         if plot:
             if N==2:
@@ -694,12 +727,7 @@ class BicAn:
                 plt.plot([0,flim],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
             elif N==3:
                 ax = plt.figure().add_subplot(projection='3d')
-                plt.plot([0,flim/3],     [0,flim/3],     [0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
-                plt.plot([flim,flim/3],  [0,flim/3],     [0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
-                plt.plot([flim/2,flim/3],[flim/2,flim/3],[0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
-                plt.plot([flim/2,0],     [flim/2,0],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
-                plt.plot([flim/2,flim],  [flim/2,0],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
-                plt.plot([0,flim],       [0,0],          [0,0],     color=[0.5,0.5,0.5], lw=2.5)
+                DrawSimplex(flim)
 
         for k in range(Nrolls):
             
@@ -714,17 +742,13 @@ class BicAn:
 
             if plot and nCoh>0.1:
                 if N==2:
-                    plt.plot(freqs[0],freqs[1],'o',color=[nCoh,nCoh,0])
+                    plt.plot(freqs[0],freqs[1],'o',color=[nCoh,0,nCoh])
                 elif N==3:
-                    ax.plot(freqs[0],freqs[1],freqs[2],'o',color=[nCoh,nCoh,0])
-
-            # if nCoh>bestCoh:
-            #     bestCoh = nCoh
-            #     bestFreqs = freqs
+                    ax.plot(freqs[0],freqs[1],freqs[2],'o',color=[nCoh,0,nCoh])
 
             if nCoh>bestCoh:
                 bestCoh = nCoh
-                bestFreqs = freqs
+                bestFreqs = 1*freqs
 
                 searchNeighbors = True if (min(bestFreqs)!=0 and max(bestFreqs)!=flim) else False
 
@@ -736,15 +760,18 @@ class BicAn:
                     print("Searching neighbors... {}".format(cnt))
 
                     bestCoh_old = bestCoh
-                    bestFreqs_old = bestFreqs
+                    bestFreqs_old = 1*bestFreqs
 
                     for n in range(2*N):
-                        freqs = bestFreqs_old
+                        # This is absolutely insane! Without the "1*" here, freqs acts like a pointer
+                        freqs = 1*bestFreqs_old
                         freqs[n//2] += 1 if n%2==0 else -1
                         nCoh,_,_ = GetPolySpec(self.sg, freqs, self.LilGuy)
                         if nCoh>bestCoh:
                             bestCoh = nCoh
-                            bestFreqs = freqs
+                            bestFreqs = 1*freqs
+
+                    searchNeighbors = True if (min(bestFreqs)!=0 and max(bestFreqs)!=flim) else False
                         
                     if bestCoh==bestCoh_old:
                         searchNeighbors = False
@@ -780,7 +807,7 @@ class BicAn:
             ax.semilogy(f,self.ft[:,k],linewidth=self.LineWidth)
 
         fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        ystr = r'$|\mathcal{%s}|^2$ [arb.]' % ('P' if self.SpecType=='stft' else 'W')
+        ystr = r'$|\mathcal{%s}|^2\,\mathrm{[arb.]}$' % ('P' if self.SpecType=='stft' else 'W')
         PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
         ax.set_xlim(f[0], f[-1])
         #plt.grid(True)
@@ -867,6 +894,67 @@ class BicAn:
         return      
 
 
+    def PlotTrispec(self,Tval):
+    # ------------------
+    # Plot trispectrum
+    # ------------------
+
+        cbarstr = r'$t^2(f_1,f_2,f_3)$'
+        f = self.fv / 10**self.FScale
+        lim = len(f)
+        lim2 = lim//2
+        lim3 = lim//3
+
+        max_t = np.max(self.tc)
+        print('Max t^2 =',max_t)
+
+        n = len(self.fv)
+        X, Y, Z = np.meshgrid(self.fv[0:n], self.fv[0:n//2], self.fv[0:n//3])
+
+        x = X.flatten()
+        y = Y.flatten()
+        z = Z.flatten()
+
+        t = self.tc.flatten()
+        T = self.ts.flatten()
+        q = t>Tval
+
+        #ax = plt.figure().add_subplot(projection='3d')
+        #fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        im = ax.scatter(x[q],y[q],z[q],c=np.angle(T[q]),cmap=self.CMap)
+
+        #isosurface(f(1:lim),f(1:lim2),f(1:lim3),bic.tc,Tval,angle(bic.ts))
+
+        ax.set_xlim(0,f[-1]) 
+        ax.set_ylim(0,f[-1]/2)
+        ax.set_zlim(0,f[-1]/3)
+        
+        # d = {['Max::' num2str(max_t)];...
+        #     ['Current::' num2str(Tval)]};
+        # text(0.85,0.9, d ,...
+        #              'units','normalized',...
+        #              'color','black');
+
+        fstr1 = r'$f_1\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        fstr2 = r'$f_2\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        fstr3 = r'$f_3\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        cax = PlotLabels(fig,[fstr1,fstr2,fstr3,cbarstr],self.FontSize,self.CbarNorth,ax,im,None)
+
+        # divider = make_axes_locatable(ax)
+        # cbarloc = 'top' if self.CbarNorth else 'right'
+        # cax = divider.append_axes(cbarloc, size='5%', pad=0.05)
+        #fig.colorbar(im,ax=ax,shrink=0.75)
+
+        DrawSimplex(f[-1])
+        
+        plt.tight_layout()
+        plt.show()
+        
+        return
+
+
     def WhichPlot(self):
     # ------------------
     # Helper method for plots
@@ -914,6 +1002,8 @@ class BicAn:
     # ------------------
         fig, ax = plt.subplots()
 
+        dum = self.fv/10**self.FScale
+
         if IsFreq:    
             for k in range(len(X)):
                 _,X[k] = arrmin(abs( dum - X[k] ))
@@ -924,17 +1014,16 @@ class BicAn:
 
         _,ystr = self.WhichPlot()
 
-        dum = self.fv/10**self.FScale
         if self._Nseries>1:
             dum = self.ff/10**self.FScale
-            X = X - len(self.fv)
-            Y = Y - len(self.fv)
+            X = np.array(X) - len(self.fv)
+            Y = np.array(Y) - len(self.fv)
 
         if self.PlotType == 'bicoh':
 
             Ntrials = 200
             g = np.zeros((Ntrials))
-            xstr = '(%3.1f,%3.1f) %sHz' % ( dum[ fLocX[0] ], dum[ fLocY[0] ], ScaleToString(self.FScale) )
+            xstr = r'$(%3.1f,%3.1f)\,\mathrm{%sHz}$' % ( dum[ fLocX[0] ], dum[ fLocY[0] ], ScaleToString(self.FScale) )
 
             print('Calculating distribution for {}...      '.format(xstr))
             for k in range(Ntrials):
@@ -957,7 +1046,7 @@ class BicAn:
             #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
             plt.semilogy(b2vec, (1/m)*np.exp(-b2vec/m), linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
 
-            PlotLabels(fig,['$b^2$' + xstr,'Probability density'], self.FontSize, self.CbarNorth, ax, None, None)
+            PlotLabels(fig,['$b^2$' + xstr,r'$\mathrm{Probability\,density}$'], self.FontSize, self.CbarNorth, ax, None, None)
 
         else:
             dumt = self.tv/10**self.TScale
@@ -970,7 +1059,7 @@ class BicAn:
                     print('No bispectral data?')
                     #return
 
-                pntstr[k] = '(%3.2f,%3.2f) %sHz' % ( dum[ fLocX[k] ],dum[ fLocY[k] ], ScaleToString(self.FScale) )
+                pntstr[k] = r'$(%3.2f,%3.2f)\,\mathrm{%sHz}$' % ( dum[ fLocX[k] ],dum[ fLocY[k] ], ScaleToString(self.FScale) )
 
                 if self.PlotType in ['abs','imag','real']:
                     umm = eval('np.{}(Bi)'.format(self.PlotType))
@@ -985,15 +1074,14 @@ class BicAn:
                     angvec = np.linspace(-1,1,Nang)
                     cnt,_  = np.histogram(Bi/np.pi, bins=Nang, range=(-1,1) )
                     ####plt.plot(angvec,cnt)
-
                     ####plt.plot(np.real(Bi),np.imag(Bi))
 
             plt.xlim([dumt[0],dumt[-1]])
             plt.grid(True)    
 
             if self.PlotType == 'angle':
-                ystr = ystr + '/$\pi$'
-            tstr = 'Time [%ss]' % ( ScaleToString(self.TScale) )
+                ystr = ystr + r'/$\pi$'
+            tstr = r'$\mathrm{Time\,[%ss]}$' % ( ScaleToString(self.TScale) )
             PlotLabels(fig,[tstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
 
         plt.tight_layout()
@@ -1038,35 +1126,11 @@ class BicAn:
         self.Figure = fig
         self.AxHands = [ax1, ax2, ax3]
         self.CaxHands = [None,None]
-    
-        # This is very primitive GUI stuff
-        ####
-        axcolor = [0.9, 0.9, 0.9]
-        rax1 = plt.axes([0.0, 0.0, 0.15, 0.1], facecolor=axcolor)
-        radio1 = RadioButtons(rax1, ['PiYG', 'viridis', 'gnuplot2'], active=0)
-        radio1.on_clicked(self.ChangeCMap)
-
-        rax2 = plt.axes([0.6, 0.85, 0.05, 0.1], facecolor=axcolor)
-        radio2 = RadioButtons(rax2, ['1', '2', '3'], active=0)
-        radio2.on_clicked(self.DumFunc)
-        ####
 
         cid = fig.canvas.mpl_connect('button_press_event', self.ClickPlot)
         pid = fig.canvas.mpl_connect('key_press_event', self.SwitchPlot)
         
         self.NewGUICax = True
-        self.RefreshGUI()
-        return
-
-
-    def DumFunc(self,event):
-        if int(event) <= self._Nseries:
-            self.PlotSig = int(event) - 1
-        self.RefreshGUI()
-        return
-
-    def ChangeCMap(self,event):
-        self.CMap = event
         self.RefreshGUI()
         return
 
@@ -1099,7 +1163,7 @@ class BicAn:
 
             f = self.fv/10**self.FScale
             if self._Nseries>1:
-                f = self.ff/10**bic.FScale
+                f = self.ff/10**self.FScale
                 # Need to subtract something from index now!!!!
 
             _,Ix = arrmin( abs(f-fx) )
@@ -1135,12 +1199,21 @@ class BicAn:
     # ------------------
         key  = event.key
         opts = 'BARIPMS'
+        sel  = '!@#'
         if key in opts:
             ind = opts.index(key)
 
             figs = ['bicoh','abs','real','imag','angle','mean','std']
             self.PlotType = figs[ind]
-
+        elif key in sel:
+            ind = sel.index(key)
+            if ind<self._Nseries:
+                self.PlotSig = ind
+            else:
+                print('Not available!')
+        elif key == 'h':
+            choiceBox()
+            print('Some kind of help menu here!')
         elif key == 'right':
             self.PlotSlice = self.PlotSlice % len(self.tv)
         elif key == 'left':
@@ -1150,6 +1223,45 @@ class BicAn:
 
         # Activate!
         self.RefreshGUI()
+        return
+
+
+
+
+    def choiceBox(self):
+
+        root = tk.Tk()
+
+        v = tk.IntVar()
+        v.set(1)  # initializing the choice, i.e. Python
+
+        languages = [('viridis', 0),
+                     ('gnuplot2', 1),
+                     ('PiYG', 2),
+                     ("C++", 104),
+                     ("C", 105)]
+
+        tk.Label(root, 
+                 text="""Choose your favourite 
+        programming language:""",
+                 justify = tk.LEFT,
+                 padx = 20).pack()
+
+        for language, val in languages:
+            tk.Radiobutton(root, 
+                           text=language,
+                           padx = 20, 
+                           variable=v, 
+                           command=self.DumFunc,
+                           value=val).pack(anchor=tk.W)
+
+
+        #root.mainloop()
+        return
+
+    def DumFunc(self):
+        #self.CMap = 
+        print(event)
         return
 
 
@@ -1172,20 +1284,34 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
 # ------------------
 # Convenience function
 # ------------------
-    #plt.rcParams["font.weight"] = "bold"
-    # Uncomment this for ALL bold
-    plt.sca(ax)       # YESSSSSS!
     n = len(strings)
     fweight = 'normal'
-    tickweight = 'bold'
+    tickweight = 'normal'
+
+    fsize = fsize if n<4 else 3*fsize//4
+
+    # Initialize list for tick label info
+    labels = []
 
     ax.set_xlabel(strings[0], fontsize=fsize, fontweight=fweight)
     if n>1:
         ax.set_ylabel(strings[1], fontsize=fsize, fontweight=fweight)
-    plt.xticks(size=fsize, weight=tickweight)
-    plt.yticks(size=fsize, weight=tickweight)
+    if n==4: # Must be trispectrum
+
+        ax.zaxis.set_rotate_label(False)  # disable automatic rotation
+        ax.set_zlabel(strings[2], fontsize=fsize, fontweight=fweight, rotation=90)
+        cbar = fig.colorbar(im,cax=None,ax=ax,shrink=0.75,label=strings[3])
+
+        cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
+        cbar.ax.tick_params(labelsize=3*fsize//4)
+
+        labels += cbar.ax.get_xticklabels()
+        labels += cbar.ax.get_yticklabels()
+
+    ax.tick_params(labelsize=fsize)
     ax.minorticks_on()
-    if n>2:
+
+    if n==3:
         if cax is None:
             divider = make_axes_locatable(ax)
             cbarloc = 'top' if cbarNorth else 'right'
@@ -1197,50 +1323,24 @@ def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
             cax.xaxis.set_label_position('top') 
             cax.xaxis.tick_top()     
             cax.set_xlabel(strings[2], fontsize=fsize, fontweight=fweight)
-            plt.xticks(size=fsize, weight=tickweight)
         else:
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
-            plt.yticks(size=fsize, weight=tickweight)
+        cax.tick_params(labelsize=3*fsize//4)
+        labels += cax.get_xticklabels()
+        labels += cax.get_yticklabels()
+
     #cid = fig.canvas.mpl_connect('button_press_event', GetClick)
+
+    # Append ticklabels
+    labels += ax.get_xticklabels()
+    labels += ax.get_yticklabels()    
+
+    # THE MAGIC HAPPENS HERE!
+    # This is a robust solution, and doesn't have bad practice "set current axis" calls
+    for label in labels:
+        label.set_fontweight(tickweight)
     return cax
-
-
-def PlotTest(t,sig):
-# ------------------
-# Debugger for plots
-# ------------------
-    fig, ax = plt.subplots()
-
-    plt.plot(t,sig)
-
-    fsize = 14
-    cbarNorth = False
-    PlotLabels(fig,['$t$ [s]','Amplitude [arb.]'],fsize,cbarNorth,ax,None,None)
-
-    plt.tight_layout()
-    plt.show()
-    return
-
-
-def ImageTest(t,f,dats):
-# ------------------
-# Debugger for plots
-# ------------------
-    fig, ax = plt.subplots()
-
-    #im = ax.imshow(dats, cmap='plasma')
-    im = ax.pcolormesh(t,f,dats, cmap='plasma', shading='auto')
-    
-    fsize = 14
-    fweight = 'normal'
-    cbarNorth = False
-    PlotLabels(fig,['$t$ [s]','$f$ [Hz]','$b^2(f_1,f_2)$'],fsize,cbarNorth,ax,im,None)
-
-    plt.tight_layout()
-    plt.show()
-    return
-
 
 def SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy):
 # ------------------
@@ -1328,34 +1428,34 @@ def TestSignal(whatsig):
         nz,_,_ = SignalGen(fS,tend,0,0,0,0,0,0,0,0,noisy)
         inData = x + y + z + x*y*z + nz
     elif dum == 'coherence':
-        x,t,_ = bic.SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
-        y,_,_ = bic.SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
-        z,_,_ = bic.SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
+        x,t,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
+        y,_,_ = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
+        z,_,_ = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
         inData = np.zeros( (len(t), 2) )
-        inData[:,0] = x[:,0]
-        inData[:,1] = y[:,0] + z[:,0]
+        inData[:,0] = x
+        inData[:,1] = y + z
     elif dum == 'cross_2tone':
         x,t,_  = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
         y,_,_  = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
         inData = np.zeros( (len(t), 2) )
-        inData[:,0] = x[:,0]
-        inData[:,1] = x[:,0] + y[:,0]
+        inData[:,0] = x
+        inData[:,1] = x + y
     elif dum == 'cross_3tone':
         x,t,_  = SignalGen(fS,tend,1,f1,0,0,0,0,0,0,noisy)
         y,_,_  = SignalGen(fS,tend,1,f2,0,0,0,0,0,0,noisy)
         z,_,_  = SignalGen(fS,tend,1,f1+f2,0,0,0,0,0,0,noisy)
         inData = np.zeros( (len(t), 3) )
-        inData[:,0] = x[:,0] 
-        inData[:,1] = y[:,0] 
-        inData[:,2] = z[:,0]
+        inData[:,0] = x 
+        inData[:,1] = y 
+        inData[:,2] = z
     elif dum == 'cross_circle':
         x,t,_  = SignalGen(fS,tend,1,f1,10,0,0,0,0,1/20,noisy)
         y,_,_  = SignalGen(fS,tend,0,0 ,0 ,1,f2,10,0,1/20,noisy)
         z,_,_  = SignalGen(fS,tend,0,f1,10,0,f2,10,1,1/20,noisy)
         inData = np.zeros( (len(t), 3) )
-        inData[:,0] = x[:,0]
-        inData[:,1] = y[:,0]
-        inData[:,2] = z[:,0]
+        inData[:,0] = x
+        inData[:,1] = y
+        inData[:,2] = z
     else:
         print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(whatsig)) 
         inData,t,fS = SignalGen(fS,tend,1,22,0,0,0,0,0,0,0)
@@ -1730,6 +1830,7 @@ def arrmin(arr):
     index = arr.tolist().index( m )
     return m,index
 
+
 def NRandSumLessThanUnity(n):
 # ------------------
 # Outputs n numbers whose sum is < 1
@@ -1745,23 +1846,13 @@ def NRandSumLessThanUnity(n):
             return dum
 
 
-# All of this is my attempt at a Tkinter GUI, prob needs to be edited and def psuedocode, will
-# eed to copy the fig block for each subplot we want and index like axi where i = 1, 2, etc.
-
-# def PlotGui(data):
-#     # -------------------
-#     # Make a user interface
-#     # -------------------
-#     import tkinter as tk
-#     import matplotlib.pyplot as plt
-#     from pandas import DataFrame as df
-#     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-#     print("Include path to data file")
-#     data = input()
-#     data = df(data, columns = ['Time', 'Amplitude'])
-#     root = tk.TK()
-
-#     fig = plt.figure() #options?
-#     ax = fig.add_subplot(221)   #think this makes a 2x2 not sure what we want
-#     scatter = FigureCanvasTKAgg(fig, root)  #just using scatter as a place holder, I know it's not actually a scatterplot
-#     df.plot(kind = 'line', figsize = (6, 6), title = "Dope GUI", legend = "Def", ax = ?)
+def DrawSimplex(flim):
+# ------------------
+# Draws simplex for trispectrum
+# ------------------
+    plt.plot([0,flim/3],     [0,flim/3],     [0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
+    plt.plot([flim,flim/3],  [0,flim/3],     [0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
+    plt.plot([flim/2,flim/3],[flim/2,flim/3],[0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
+    plt.plot([flim/2,0],     [flim/2,0],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
+    plt.plot([flim/2,flim],  [flim/2,0],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
+    plt.plot([0,flim],       [0,0],          [0,0],     color=[0.5,0.5,0.5], lw=2.5)
