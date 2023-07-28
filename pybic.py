@@ -3,11 +3,11 @@
 #      ______     ______ _      
 #      | ___ \    | ___ (_)          Bicoherence Analysis Module for Python
 #      | |_/ /   _| |_/ /_  ___      --------------------------------------
-#      |  __/ | | | ___ \ |/ __|           
-#      | |  | |_| | |_/ / | (__      v1.0 (c) 2022 -- G. Riggs | T. Matheny          
-#      \_|   \__, \____/|_|\___|              
-#             __/ |                      WVU Dept. of Physics & Astronomy
-#            |___/                       
+#      |  __/ | | | ___ \ |/ __|               v2.0 (c) 2022-2023
+#      | |  | |_| | |_/ / | (__                        
+#      \_|   \__, \____/|_|\___|              G. Riggs & T. Matheny
+#             __/ |                      
+#            |___/                       WVU Dept. of Physics & Astronomy
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # The Bispectrum
@@ -29,14 +29,14 @@
 # additional options... (see below for instructions)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # autoscale -> autoscaling in figures                  [default :: False]
-# bispectro -> computes bispectrogram                  x[default :: False]
+# bispectro -> computes bispectrogram                 x[default :: False]
 # calccoi   -> cone of influence                       [default :: False]
-# cbarnorth -> control bolorbar location               [default :: True]
+# cbarnorth -> control colorbar location               [default :: True]
 # cmap      -> adjust colormap                         [default :: 'viridis']
-# dealias   -> applies antialiasing (LP) filter        x[default :: False]
+# dealias   -> apply antialiasing (LP) filter         x[default :: False]
 # detrend   -> remove linear trend from data           [default :: False]
 # errlim    -> mean(fft) condition                     [default :: 1e15] 
-# filter    -> xxxxxxxxxxxxxxx                         x[default :: 'none']
+# filter    -> apply band-pass filter                 x[default :: 'none']
 # freqres   -> desired frequency resolution [Hz]       [default :: 0]
 # fscale    -> scale for plotting frequencies          [default :: 0]
 # justspec  -> true for just spectrogram               [default :: False]
@@ -49,23 +49,40 @@
 # spectype  -> set desired time-freq. method           [default :: 'stft']
 # step      -> step size for Welch method in samples   [default :: 512]
 # subint    -> subinterval size in samples             [default :: 128]
-# sizewarn  -> warning for matrix size                 x[default :: True]
-# smooth    -> smooths FFT by n samples                x[default :: 1]
+# sizewarn  -> warning for matrix size                x[default :: True]
+# smooth    -> smooths FFT by n samples               x[default :: 1]
 # trispec   -> estimates trispectrum                   [default :: False]
 # tscale    -> scale for plotting time                 [default :: 0]
 # tzero     -> initial time                            [default :: 0]
 # verbose   -> allow printing of info structure        [default :: False]
-# window    -> select window function                  x[default :: 'hann']
+# window    -> select window function                 x[default :: 'hann']
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 7/27/2023 -> Developed and debugged PlotPhasor() method for normalized plots 
+# of biphase, led to significant changes to PlotPointOut(), pulled out the 
+# routines for plots and made new methods [Plotb2Prob(), PlotBvsTime()], added 
+# 'hybrid' option for plotting [b^2(f1,f2) x biphase(f1,f2)], using ClickPlot()
+# while PlotType='hybrid' gives subplots (will surely change!)
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/20/2023 -> Fixed issue with reference in MonteCarloMax(); adjusted 'input'
-# option to accommodate input dialog [using filedialog.askopenfilename()];
-# changed default sigma to pi*(...) instead of 5*(...); lots of small fixes;
-# finally got tick issues figured out with list of labels; removed small 
-# matplotlib toggles, now use SHIFT + {1,2,3} = {!,@,#} to switch for cross;
-# 
+# option to accommodate input dialog [resurrected FileDialog()!]; changed 
+# default sigma to pi*(...) instead of 5*(...); lots of small fixes; finally 
+# got tick issues figured out with list of labels; removed small matplotlib 
+# toggles, now use SHIFT + {1,2,3} = {!,@,#} to switch for cross; read about 
+# and implemented __setattr__ method to check on issues with case, etc; cone
+# cone of influence (COI) added to wavelet scaleogram; added DrawSimplex()
+# method to ease drawing of tricoherence domain; figured out issue with dum
+# vars acting like pointers [see MonteCarloMax()]; added PlotTrispec() method;
+# fixed issue in PlotPointOut() for cross-bispectra, changed some labels to 
+# conform to LaTeX style; looking to add colormap selector in PlotGUI() [not
+# done yet! Will have to get back to this...]; updated PlotLabels() method to 
+# finally(!) fix issue with tick labels and ALSO annoying thing with colorbar
+# labels resizing all the time; added defaults for SignalGen() so TestSignal() 
+# is easier to read [actually have sone a bit of this kind of thing!], new
+# test signals ('helix','3tone_short',&c.); PlotTrispec() allows user to color
+# scatter with either tricoherence OR triphase [maybe automate this???]
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/19/2023 -> Changed fonts to LaTeX (computer modern, 'cm'); added support
 # for nth-order polyspectrum with GetPolySpec(...); included a few more test
@@ -189,28 +206,20 @@
 # 7/01/2022 --> First "code." 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-# THINGS TO DO!
+# THINGS TO DO! [** = not yet, *_ = kind of, __ = probably done]
+# ** Add colormap picker in PlotGUI() with SHIFT + c, say
 # *_ Swap out matplotlib widgets for full tkinter GUI =^x
-# ** Figure out setter functions
+# *_ Figure out setter functions
 # ** Configure warnings
 # __ Implement some kind of check for Raw data! Should eliminate string, etc.
 # __ Fix colorbar axes overplotting each refresh
-# ** Fix issue with colorbar labels when calling RefreshGUI()
+# __ Fix issue with colorbar labels when calling RefreshGUI()
 # *_ Add buttons and callbacks from Matlab
 # ** Swap out "dum" variables for more literate ones
 # ** Comment the code!!!
 
 # Methods left:
 #{
-# (1) Required
-# ...ProcessData
-
-# (2) Extra but nice
-# ...
-
-# (3) More to learn about Python...
-# ...PlotGUI
-# ...RefreshGUI
 # MakeMovie
 # etc.
 #}
@@ -327,7 +336,7 @@ class BicAn:
     sb = []   # Std dev of b^2
 
 
-    # Methods
+    # Class methods
     def __init__(self,inData,**kwargs):
     # ------------------
     # Constructor
@@ -339,6 +348,9 @@ class BicAn:
         return
 
     def __setattr__(self, attr, val):
+    # ------------------
+    # Internal method to set attributes
+    # ------------------
         if not attr in dir(BicAn):
             print('***WARNING*** :: BicAn class has no attribute {}!'.format(attr))
             # Check case issue
@@ -360,6 +372,8 @@ class BicAn:
             if attr=='SubInt':
                 self.FreqRes = self.MaxRes
                 print('***NOTE*** :: Resolution set to maximum!')
+        return
+
 
     # Dependent properties
     @property
@@ -379,12 +393,6 @@ class BicAn:
         #val = len(self.Raw) if len(self.Processed)==0 else len(self.Processed)
         val = max(self.Raw.shape) if len(self.Processed)==0 else max(self.Processed.shape)
         return val
-
-    # Set functions
-    # @Raw.setter
-    # def Raw(self, Raw):
-    #      self.__Raw = Raw
-    #      return
 
 
     def ParseInput(self,inData,kwargs):
@@ -734,7 +742,7 @@ class BicAn:
 
         for k in range(Nrolls):
             
-            freqs = ( NRandSumLessThanUnity(N) * flim ).astype(int)
+            freqs = ( nRandSumLessThanUnity(N) * flim ).astype(int)
             freqs.sort()
             freqs = freqs[::-1]
 
@@ -792,7 +800,6 @@ class BicAn:
         return bestCoh, bestFreqs
 
 
-
     ## Plot methods
     def PlotPowerSpec(self,*args):
     # ------------------
@@ -811,7 +818,7 @@ class BicAn:
 
         fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         ystr = r'$|\mathcal{%s}|^2\,\mathrm{[arb.]}$' % ('P' if self.SpecType=='stft' else 'W')
-        PlotLabels(fig,[fstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
+        PlotLabels(fig,ax,[fstr,ystr],self.FontSize,self.CbarNorth)
         ax.set_xlim(f[0], f[-1])
         #plt.grid(True)
 
@@ -844,7 +851,7 @@ class BicAn:
 
 
         #im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto', vmin=-4, vmax=2)
-        cax = PlotLabels(fig,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
+        cax = PlotLabels(fig,ax,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,im,cax)
         if self.NewGUICax:
             self.CaxHands[1] = cax
         ax.set_xlim(t[0], t[-1])
@@ -886,7 +893,7 @@ class BicAn:
         
         fstr1 = r'$f_1\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         fstr2 = r'$f_2\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        cax = PlotLabels(fig,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,ax,im,cax)
+        cax = PlotLabels(fig,ax,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,im,cax)
         if self.NewGUICax:
             self.CaxHands[0] = cax
         ax.set_xlim(f[0], f[-1])
@@ -897,7 +904,7 @@ class BicAn:
         return      
 
 
-    def PlotTrispec(self,Tval,colorTricoh=True):
+    def PlotTrispec(self,Tval=0.5,colorTricoh=True):
     # ------------------
     # Plot trispectrum
     # ------------------
@@ -945,7 +952,7 @@ class BicAn:
         fstr1 = r'$f_1\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         fstr2 = r'$f_2\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         fstr3 = r'$f_3\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        cax = PlotLabels(fig,[fstr1,fstr2,fstr3,cbarstr],self.FontSize,self.CbarNorth,ax,im,None)
+        cax = PlotLabels(fig,ax,[fstr1,fstr2,fstr3,cbarstr],self.FontSize,self.CbarNorth,im,None)
 
         # divider = make_axes_locatable(ax)
         # cbarloc = 'top' if self.CbarNorth else 'right'
@@ -978,6 +985,9 @@ class BicAn:
         elif guy == 'std':
             dum = self.sb
             cbarstr = r'$\sigma_{b^2}(f_1,f_2)$'
+        elif guy == 'hybrid':
+            dum = self.bc * np.angle(self.bs) / np.pi
+            cbarstr = r'$b^2(f_1,f_2)\times\beta(f_1,f_2)$';
         return dum,cbarstr
 
 
@@ -1001,13 +1011,150 @@ class BicAn:
         self.PlotType = old_plot
 
 
+    def Plotb2Prob(self,fLocX,fLocY,X,Y,fig=None,ax=None,fv=None,Ntrials=200,b2bins=100):
+    # ------------------
+    # Estimate and plot distribution of b2 for single point
+    # ------------------
+
+        doShow = False
+        if fig is None:
+            doShow = True
+            fig, ax = plt.subplots()
+
+        if fv is None:
+            fv = self.fv/10**self.FScale
+        
+        g = np.zeros((Ntrials))
+        xstr = r'$(%3.1f,%3.1f)\,\mathrm{%sHz}$' % ( fv[ fLocX[0] ], fv[ fLocY[0] ], ScaleToString(self.FScale) )
+
+        print('Calculating distribution for {}...      '.format(xstr))
+        for k in range(Ntrials):
+            LoadBar(k,Ntrials)
+            g[k],_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
+        print('\b\b^]\n')  
+
+        # Limit b^2, create vector, and produce histogram 
+        b2lim  = 1 
+        b2vec  = np.linspace(0,b2lim,b2bins)
+        cnt,_  = np.histogram(g, bins=b2bins, range=(0,b2lim) )
+
+        # Integrate count
+        intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
+        # exp dist -> (1/m)exp(-x/m)
+        m = np.mean(g)
+        ax.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none', label='randomized')
+        # More accurate distribution... Just more complicated! (Get to it later...)
+        #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
+        b2dist = (1/m)*np.exp(-b2vec/m)
+        ax.plot(b2vec, b2dist, linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
+
+        cVal = 0.999
+        b2crit = -m*np.log(1 - cVal)
+        b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
+        yrange = [0, b2dist[0]]
+        #yrange = [1e-3, b2dist[0]*10]
+        ax.plot([b2crit,b2crit], yrange, label=r'$99.9\%$ CI')
+        ax.plot([b2true,b2true], yrange, label='Measured')
+
+        PlotLabels(fig,ax,['$b^2$' + xstr,r'$\mathrm{Probability\,density}$'], self.FontSize, self.CbarNorth)
+
+        ax.set_xlim(0,1)
+        ax.set_ylim(yrange[0],yrange[1])
+
+        if doShow:
+            plt.tight_layout()
+            plt.legend()
+            plt.show()
+        return
+
+
+    def PlotBvsTime(self,fLocX,fLocY,X,Y,fig=None,ax=None,fv=None):
+    # ------------------
+    # Estimate and plot distribution of b2 for single point
+    # ------------------
+        doShow = False
+        if fig is None:
+            doShow = True
+            fig, ax = plt.subplots()
+
+        if fv is None:
+            fv = self.fv/10**self.FScale
+
+        dumt = self.tv/10**self.TScale
+        pntstr = ['']*len(X)
+        for k in range(len(X)):
+
+            # Calculate "point-out"
+            _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
+            if Bi is None:
+                print('No bispectral data?')
+                #return
+
+            pntstr[k] = r'$(%3.2f,%3.2f)\,\mathrm{%sHz}$' % ( fv[ fLocX[k] ], fv[ fLocY[k] ], ScaleToString(self.FScale) )
+
+            if self.PlotType in ['abs','imag','real']:
+                umm = eval('np.{}(Bi)'.format(self.PlotType))
+                if self.PlotType == 'abs':
+                    ax.semilogy(dumt,umm, linewidth=self.LineWidth, label=pntstr[k])
+                else:
+                    ax.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k])
+            elif self.PlotType == 'angle':
+                ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', label=pntstr[k])
+
+        plt.xlim([dumt[0],dumt[-1]])
+        plt.grid(True)    
+
+        _,ystr = self.WhichPlot()
+        if self.PlotType == 'angle':
+            ystr = ystr + r'/$\pi$'
+        tstr = r'$\mathrm{Time\,[%ss]}$' % ( ScaleToString(self.TScale) )
+        PlotLabels(fig,ax,[tstr,ystr],self.FontSize,self.CbarNorth)
+
+        if doShow:
+            plt.tight_layout()
+            plt.legend()
+            plt.show()
+        return
+
+
+    def PlotPhasor(self,fLocX,fLocY,X,Y,fig=None,ax=None,fv=None):
+    # ------------------
+    # Estimate and plot distribution of b2 for single point
+    # ------------------
+        doShow = False
+        if fig is None:
+            doShow = True
+            fig, ax = plt.subplots()
+
+        if fv is None:
+            fv = self.fv/10**self.FScale
+
+        pntstr = r'$(%3.2f,%3.2f)\,\mathrm{%sHz}$' % ( fv[ fLocX[0] ], fv[ fLocY[0] ], ScaleToString(self.FScale) )
+
+        _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
+        Bi /= np.max(abs(Bi))
+        ax.plot(np.real(Bi),np.imag(Bi),'o',label=pntstr)
+        ax.set_xlim(-1,1)
+        ax.set_ylim(-1,1)
+
+        reStr = r'$\Re\,\mathcal{B}/\mathcal{B}_\mathrm{max}$'
+        imStr = r'$\Im\,\mathcal{B}/\mathcal{B}_\mathrm{max}$'
+        PlotLabels(fig,ax,[reStr,imStr],self.FontSize,self.CbarNorth)
+
+        plt.grid(True)
+        if doShow:
+            plt.tight_layout()
+            plt.legend()
+            plt.show()
+        return
+
+
     def PlotPointOut(self,X,Y,IsFreq=False):
     # ------------------
     # Plot value of b^2 over time
     # ------------------
-        fig, ax = plt.subplots()
 
-        dum = self.fv/10**self.FScale
+        fv = self.fv/10**self.FScale
 
         if IsFreq:    
             for k in range(len(X)):
@@ -1017,81 +1164,41 @@ class BicAn:
         fLocX = X
         fLocY = Y
 
-        _,ystr = self.WhichPlot()
-
         if self._Nseries>1:
-            dum = self.ff/10**self.FScale
+            fv = self.ff/10**self.FScale
             X = np.array(X) - len(self.fv)
             Y = np.array(Y) - len(self.fv)
 
-        if self.PlotType == 'bicoh':
+        if self.PlotType == 'hybrid':  
 
-            Ntrials = 200
-            g = np.zeros((Ntrials))
-            xstr = r'$(%3.1f,%3.1f)\,\mathrm{%sHz}$' % ( dum[ fLocX[0] ], dum[ fLocY[0] ], ScaleToString(self.FScale) )
+            fig = plt.figure()
 
-            print('Calculating distribution for {}...      '.format(xstr))
-            for k in range(Ntrials):
-                LoadBar(k,Ntrials)
-                g[k],_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
-            print('\b\b^]\n')  
+            ax1 = plt.subplot(221)
+            ax2 = plt.subplot(222)
+            ax3 = plt.subplot(223)
+            ax4 = plt.subplot(224)
 
-            # Limit b^2, create vector, and produce histogram 
-            b2lim  = 0.5
-            b2bins = 1000
-            b2vec  = np.linspace(0,b2lim,b2bins)
-            cnt,_  = np.histogram(g, bins=b2bins, range=(0,b2lim) )
+            self.Plotb2Prob(fig=fig,ax=ax1,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+            self.PlotPhasor(fig=fig,ax=ax3,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+            self.PlotType = 'angle'
+            self.PlotBvsTime(fig=fig,ax=ax2,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+            self.PlotType = 'abs'
+            self.PlotBvsTime(fig=fig,ax=ax4,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+            self.PlotType = 'hybrid'
 
-            # Integrate count
-            intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
-            # exp dist -> (1/m)exp(-x/m)
-            m = np.mean(g)
-            plt.semilogy(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none', label='randomized')
-            # More accurate distibution... Just more complicated! (Get to it later...)
-            #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
-            plt.semilogy(b2vec, (1/m)*np.exp(-b2vec/m), linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
+            plt.tight_layout()
+            plt.legend()
+            plt.show()
 
-            PlotLabels(fig,['$b^2$' + xstr,r'$\mathrm{Probability\,density}$'], self.FontSize, self.CbarNorth, ax, None, None)
+            #self.PlotPhasor(fig=fig,ax=ax,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+
+        elif self.PlotType == 'bicoh':
+            self.Plotb2Prob(fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
 
         else:
-            dumt = self.tv/10**self.TScale
-            pntstr = ['']*len(X)
-            for k in range(len(X)):
-
-                # Calculate "point-out"
-                _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
-                if Bi is None:
-                    print('No bispectral data?')
-                    #return
-
-                pntstr[k] = r'$(%3.2f,%3.2f)\,\mathrm{%sHz}$' % ( dum[ fLocX[k] ],dum[ fLocY[k] ], ScaleToString(self.FScale) )
-
-                if self.PlotType in ['abs','imag','real']:
-                    umm = eval('np.{}(Bi)'.format(self.PlotType))
-                    if self.PlotType == 'abs':
-                        plt.semilogy(dumt,umm, linewidth=self.LineWidth, label=pntstr[k])
-                    else:
-                        plt.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k])
-                elif self.PlotType == 'angle':
-                    plt.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', label=pntstr[k])
-
-                    Nang = 20
-                    angvec = np.linspace(-1,1,Nang)
-                    cnt,_  = np.histogram(Bi/np.pi, bins=Nang, range=(-1,1) )
-                    ####plt.plot(angvec,cnt)
-                    ####plt.plot(np.real(Bi),np.imag(Bi))
-
-            plt.xlim([dumt[0],dumt[-1]])
-            plt.grid(True)    
-
-            if self.PlotType == 'angle':
-                ystr = ystr + r'/$\pi$'
-            tstr = r'$\mathrm{Time\,[%ss]}$' % ( ScaleToString(self.TScale) )
-            PlotLabels(fig,[tstr,ystr],self.FontSize,self.CbarNorth,ax,None,None)
-
-        plt.tight_layout()
-        plt.legend()
-        plt.show()
+            self.PlotBvsTime(fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+        return
+        
 
 
     def RefreshGUI(self):
@@ -1203,12 +1310,12 @@ class BicAn:
     # Callback for keypress
     # ------------------
         key  = event.key
-        opts = 'BARIPMS'
+        opts = 'BARIPMSH'
         sel  = '!@#'
         if key in opts:
             ind = opts.index(key)
 
-            figs = ['bicoh','abs','real','imag','angle','mean','std']
+            figs = ['bicoh','abs','real','imag','angle','mean','std','hybrid']
             self.PlotType = figs[ind]
         elif key in sel:
             ind = sel.index(key)
@@ -1270,6 +1377,22 @@ class BicAn:
         return
 
 
+    def CheckCouple(self,f):
+    # ------------------
+    # For a given test vector of freqs, check nth order coupling
+    # ------------------
+      n = len(f)
+      mask = bin_mat(n)
+      L = 2**(n-1)
+      out = np.zeros(L)
+      for k in range(L):
+        dum = f * mask[k,:]
+        out[k],_,_ = GetPolySpec(self.sg,dum,self.LilGuy)
+        print(dum,'~>',out[k])
+      print('Mean is ',np.mean(out))
+      return out
+
+
 # Module methods
 
 def FileDialog():
@@ -1285,14 +1408,13 @@ def FileDialog():
     return ans
 
 
-def PlotLabels(fig,strings,fsize,cbarNorth,ax,im,cax):
+def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold'):
 # ------------------
 # Convenience function
 # ------------------
     n = len(strings)
-    fweight = 'normal'
-    tickweight = 'normal'
 
+    # Reduce fontsize for 3D plots
     fsize = fsize if n<4 else 3*fsize//4
 
     # Initialize list for tick label info
@@ -1563,6 +1685,24 @@ def ApplyCWT(sig,samprate,sigma):
     return CWT,acwt,freq_vec,time_vec
 
 
+def SpecToCoherence(spec,lilguy):
+# ------------------
+# Cross-spectrum, cross-coherence, coherogram
+# ------------------
+    print('Calculating cross-coherence...')     
+    ncol = spec.shape[1]
+
+    C  = np.conj(spec[:,:,0]) * spec[:,:,1];
+    N1 = sum( np.transpose( abs(spec[:,:,0])**2 ) ) / ncol
+    N2 = sum( np.transpose( abs(spec[:,:,1])**2 ) ) / ncol
+    
+    cc = abs( sum( np.transpose(C) )/ ncol )**2
+    cc = cc / (N1*N2)
+
+    xx = (abs(C)**2) / ( ( abs(spec[:,:,0])**2 ) * ( abs(spec[:,:,1])**2 ) + lilguy )
+    return C,cc,xx
+
+
 def SpecToBispec(spec,v,lilguy):
 # ------------------
 # Turns spectrogram to b^2
@@ -1718,25 +1858,7 @@ def GetBispec(spec,v,lilguy,j,k,rando):
     w = (abs(B)**2)/(E12*E3+lilguy)
     
     B = B/len(Bi)
-    return w,B,Bi
-
-
-def SpecToCoherence(spec,lilguy):
-# ------------------
-# Cross-spectrum, cross-coherence, coherogram
-# ------------------
-    print('Calculating cross-coherence...')     
-    ncol = spec.shape[1]
-
-    C  = np.conj(spec[:,:,0]) * spec[:,:,1];
-    N1 = sum( np.transpose( abs(spec[:,:,0])**2 ) ) / ncol
-    N2 = sum( np.transpose( abs(spec[:,:,1])**2 ) ) / ncol
-    
-    cc = abs( sum( np.transpose(C) )/ ncol )**2
-    cc = cc / (N1*N2)
-
-    xx = (abs(C)**2) / ( ( abs(spec[:,:,0])**2 ) * ( abs(spec[:,:,1])**2 ) + lilguy )
-    return C,cc,xx 
+    return w,B,Bi 
 
 
 def GetPolySpec(spec,f,lilguy,rando=False):
@@ -1775,11 +1897,11 @@ def GetPolySpec(spec,f,lilguy,rando=False):
     return nCoh,nSpec,nSpec_i*s
 
 
-def HannWindow(N):
+def HannWindow(N,q=2):
 # ------------------
 # Hann window
 # ------------------
-    win = (np.sin(np.pi*np.arange(N)/(N-1)))**2
+    win = (np.sin(np.pi*np.arange(N)/(N-1)))**q
     return win
 
 
@@ -1846,7 +1968,19 @@ def arrmin(arr):
     return m,index
 
 
-def NRandSumLessThanUnity(n):
+def bin_mat(n):
+  # Creates matrix of ...
+  dum = ((np.arange(2**(n-1),2**n).reshape(-1,1) & (2**np.arange(n))) != 0).astype(int)[:,::-1]
+  dum[dum==0] = -1
+  return dum
+
+
+def diff_to_sum_vec(v):
+  v[0] = sum(v)
+  return v
+
+
+def nRandSumLessThanUnity(n):
 # ------------------
 # Outputs n numbers whose sum is < 1
 # ------------------
