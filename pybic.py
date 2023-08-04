@@ -60,11 +60,18 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 8/03/2023 -> Added "intermittent" quadratic coupling ('d3dtest') option,
+# changed some of the default labels ['\mathcal{P}(t,f)'->'X(t,f)'] for STFT,
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 8/01/2023 -> Fixed tiny issue with CWT (zeroth bin was f0, not 0)...
+# Why do I have a memory of thinking about this??? Am I wrong now? Am I tired?
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/27/2023 -> Developed and debugged PlotPhasor() method for normalized plots 
 # of biphase, led to significant changes to PlotPointOut(), pulled out the 
 # routines for plots and made new methods [Plotb2Prob(), PlotBvsTime()], added 
 # 'hybrid' option for plotting [b^2(f1,f2) x biphase(f1,f2)], using ClickPlot()
-# while PlotType='hybrid' gives subplots (will surely change!)
+# while PlotType='hybrid' gives subplots (will surely change!), fiddled with 
+# Plotlabels() defaults to eliminate annoying repetition (yay Python!)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 7/20/2023 -> Fixed issue with reference in MonteCarloMax(); adjusted 'input'
 # option to accommodate input dialog [resurrected FileDialog()!]; changed 
@@ -417,7 +424,7 @@ class BicAn:
 
                 #### Should this be global?
                 siglist = ['demo','classic','tone','noisy','2tone','3tone','4tone',
-                            'line','circle','fast_circle','quad_couple','cube_couple',
+                            'line','circle','fast_circle','quad_couple','d3dtest','cube_couple',
                             'coherence','cross_2tone','cross_3tone','cross_circle',
                             '3tone_short','cross_3tone_short','helix']
                 if instr == 'input':
@@ -440,7 +447,8 @@ class BicAn:
                         self.ParseInput(sig,{'SampRate':float(fS)})  
                     root.destroy()
                 else:
-                    print('Hmmm. That string isn`t supported yet... Try "demo".')   
+                    print('Hmmm. That string isn`t supported yet... Try "demo".') 
+                    print(siglist)  
 
             else:
                 print('***ERROR*** :: Input must be a numpy array or valid option! "{}" class is not supported.'.format(type(inData)))
@@ -817,7 +825,7 @@ class BicAn:
             ax.semilogy(f,self.ft[:,k],linewidth=self.LineWidth)
 
         fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        ystr = r'$|\mathcal{%s}|^2\,\mathrm{[arb.]}$' % ('P' if self.SpecType=='stft' else 'W')
+        ystr = r'$\langle|\mathcal{%s}|^2\rangle\,\mathrm{[arb.]}$' % ('P' if self.SpecType=='stft' else 'W')
         PlotLabels(fig,ax,[fstr,ystr],self.FontSize,self.CbarNorth)
         ax.set_xlim(f[0], f[-1])
         #plt.grid(True)
@@ -842,7 +850,7 @@ class BicAn:
 
         tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(self.TScale))
         fstr = r'$f\,\, [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        cbarstr = r'$\log_{10}|\mathcal{%s}(t,f)|^2$' % ('P' if self.SpecType=='stft' else 'W')
+        cbarstr = r'$\log_{10}|%s(t,f)|^2$' % ('X' if self.SpecType=='stft' else r'\mathcal{W}')
 
         t = self.tv/10**self.TScale
         f = self.fv/10**self.FScale
@@ -926,7 +934,8 @@ class BicAn:
 
         t = self.tc.flatten()
         T = self.ts.flatten()
-        q = t>Tval
+        #q = t>Tval
+        q = abs(t-Tval) < 0.1
 
         dum = t[q] if colorTricoh else np.angle(T[q])
         cbarstr = r'$t^2(f_1,f_2,f_3)$' if colorTricoh else r'$\gamma(f_1,f_2,f_3)$'
@@ -1011,7 +1020,7 @@ class BicAn:
         self.PlotType = old_plot
 
 
-    def Plotb2Prob(self,fLocX,fLocY,X,Y,fig=None,ax=None,fv=None,Ntrials=200,b2bins=100):
+    def Plotb2Prob(self,fLocX,fLocY,X,Y,fig=None,ax=None,fv=None,Ntrials=200,b2bins=100,cVal=0.999):
     # ------------------
     # Estimate and plot distribution of b2 for single point
     # ------------------
@@ -1048,7 +1057,6 @@ class BicAn:
         b2dist = (1/m)*np.exp(-b2vec/m)
         ax.plot(b2vec, b2dist, linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
 
-        cVal = 0.999
         b2crit = -m*np.log(1 - cVal)
         b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
         yrange = [0, b2dist[0]]
@@ -1137,8 +1145,8 @@ class BicAn:
         ax.set_xlim(-1,1)
         ax.set_ylim(-1,1)
 
-        reStr = r'$\Re\,\mathcal{B}/\mathcal{B}_\mathrm{max}$'
-        imStr = r'$\Im\,\mathcal{B}/\mathcal{B}_\mathrm{max}$'
+        reStr = r'$\Re\,\mathcal{B}/|\mathcal{B}|_\mathrm{max}$'
+        imStr = r'$\Im\,\mathcal{B}/|\mathcal{B}|_\mathrm{max}$'
         PlotLabels(fig,ax,[reStr,imStr],self.FontSize,self.CbarNorth)
 
         plt.grid(True)
@@ -1454,8 +1462,8 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
         cax.tick_params(labelsize=3*fsize//4)
-        labels += cax.get_xticklabels()
-        labels += cax.get_yticklabels()
+        # labels += cax.get_xticklabels()
+        # labels += cax.get_yticklabels()
 
     #cid = fig.canvas.mpl_connect('button_press_event', GetClick)
 
@@ -1507,7 +1515,7 @@ def SignalGen(fS=1,tend=100,Ax=1,fx=1,Afx=0,Ay=0,fy=0,Afy=0,Az=0,Ff=0,noisy=2):
 
     sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
     #sig = np.reshape(sig, ( len(sig), 1 )) # Output Nx1 numpy array
-    return sig,t,fS
+    return sig,t,float(fS)
 
 
 def TestSignal(whatsig):
@@ -1551,6 +1559,17 @@ def TestSignal(whatsig):
         y,_,_ = SignalGen(fS,tend,fx=f2,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x + y + x * y + nz
+    elif dum == 'd3dtest':
+        fS = 500
+        f1 = 97
+        f2 = 84
+        Ff = 1/20
+        Az = -1
+        x,t,_ = SignalGen(fS,tend,fx=f1,noisy=0)
+        y,_,_ = SignalGen(fS,tend,fx=f2,noisy=0)
+        A,_,_ = SignalGen(fS,tend,Ax=Az,fx=Ff,noisy=0)
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
+        inData = x + y + (A**4)*x*y + nz
     elif dum == 'cube_couple':
         x,t,_ = SignalGen(fS,tend,fx=13,noisy=0)
         y,_,_ = SignalGen(fS,tend,fx=17,noisy=0)
@@ -1670,13 +1689,13 @@ def ApplyCWT(sig,samprate,sigma):
         fft_sig = fft_sig[0:nyq]
 
         print('Applying CWT...      ')
-        for a in range(nyq):
+        for a in range(nyq-1):
             LoadBar(a,nyq)
             # Apply for each scale (read: frequency)
             dum = np.fft.ifft(fft_sig * Psi(a+1))                # Linear scale (f_a = a*f0)
             #dum = np.fft.ifft(fft_sig * Psi( 2**((a+1)/12) ))   # Equal-tempered
             #dum = np.fft.ifft(fft_sig * Psi( (a+1)/10 ) )
-            CWT[a,:,k] = dum
+            CWT[a+1,:,k] = dum
 
             acwt[a,k]  = sum(abs(dum)**2) / len(dum)
         print('\b\b\b^]\n')
@@ -1993,6 +2012,20 @@ def nRandSumLessThanUnity(n):
         if sum(dum)<=1:
             foundIt = True
             return dum
+
+def nRandSumLessThanUnityFAST(n):
+# ------------------
+# Outputs n numbers whose sum is < 1
+# ------------------
+    S = 1
+    dum = np.zeros(n)
+    for k in range(n):
+
+        dum[k] = S * np.random.random()
+        S -= dum[k]
+
+    return dum
+
 
 
 def DrawSimplex(flim):
