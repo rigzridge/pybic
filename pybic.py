@@ -41,6 +41,7 @@
 # fscale    -> scale for plotting frequencies          [default :: 0]
 # justspec  -> true for just spectrogram               [default :: False]
 # lilguy    -> set epsilon                             [default :: 1e-6]
+# limfreq   -> limits fourier bins to nyq/limfreq      [default :: 2]
 # note      -> optional string for documentation       [default :: ' '] 
 # plotit    -> start plotting tool when done           [default :: False]
 # plottype  -> set desired plottable                   [default :: 'bicoh']
@@ -59,6 +60,18 @@
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 8/18/2023 -> Fixed issue with plotting local (inst.) b^2 instead of local  
+# bispectrum when PlotType~='bicoh' and BicOfTime=True, required additions to
+# WhichPlot() for proper strings; right arrow action fixed
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 8/17/2023 -> Now using LimFreq property to make low-frequency analysis
+# simpler, see 'circle_oversample' option; added set methods for 'PlotType',
+# 'SpecType','TScale','FScale' props, PlotSlice prop updated to allow GUI 
+# options from Matlab (click spectrogram, etc); "vLim" input for PlotSpectro()
+# controls colorbar limits [think caxis(vLim)]; BicOfTime prop toggles plots
+# of "instantaneous" bicoherence spectrum, SHIFT + {t,x} toggles or resets;
+# bunch of small edits in ApplySTFT() and ApplyCWT() required for LimFreq 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/16/2023 -> Added LineColor property from BicAn.m for adding line plots
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -254,6 +267,7 @@ from matplotlib import cm
 from tkinter import *
 #import pandas as pd
 
+# Computer modern font (LaTeX default)
 plt.rcParams['mathtext.fontset'] = 'cm'
 
 # Define classes for bispec script
@@ -283,7 +297,7 @@ class BicAn:
     FreqRes   = 0.
     SubInt    = 512
     Step      = 128
-    LimFreq   = 2
+    LimFreq   = 2.
     Window    = 'hann'       
     Sigma     = 0.
     CalcCOI   = False
@@ -652,9 +666,11 @@ class BicAn:
             nz[-1,:] = 1
             nzCWT,_,_,_ = ApplyCWT(nz,self.SampRate,self.Sigma,self.LimFreq)
             for k in range(self._Nseries):
-                coiMask = ( (abs(nzCWT)/np.max(abs(nzCWT)) ) < np.exp(-2) )
+                coiMask = ( (abs(nzCWT)/np.max(abs(nzCWT)) ) < np.exp(-3) )
                 CWT[:,:,k] = CWT[:,:,k] * coiMask[:,:,0]
                 acwt[:,k]  = np.mean(abs(CWT[:,:,k])**2,1)
+
+                #CWT[:,:,k] = nzCWT[:,:,k]
 
         self.tv = t + self.TZero
         self.fv = f
@@ -844,10 +860,10 @@ class BicAn:
             ax  = args[1]
 
         f = self.fv/10**self.FScale
-        dum = self.ft if self.PlotSlice is None else abs(self.sg[:,self.PlotSlice,:])
+        dum = self.ft if self.PlotSlice is None else abs(self.sg[:,self.PlotSlice,:])**2
 
         for k in range(self._Nseries):
-            ax.semilogy(f, dum[:,k]**2, linewidth=self.LineWidth, color=self.LineColor[50+40*k])
+            ax.semilogy(f, dum[:,k], linewidth=self.LineWidth, color=self.LineColor[50+40*k])
 
         fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         ystr = r'$\langle|\mathcal{%s}|^2\rangle\,\mathrm{[arb.]}$' % ('P' if self.SpecType=='stft' else 'W')
@@ -881,9 +897,9 @@ class BicAn:
         f = self.fv/10**self.FScale
 
         if vLim is None:
-            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
+            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig]) + 0*1e-16), cmap=self.CMap, shading='auto')
         else:
-            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto', vmin=vLim[0], vmax=vLim[1])
+            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig]) + 0*1e-16), cmap=self.CMap, shading='auto', vmin=vLim[0], vmax=vLim[1])
 
         cax = PlotLabels(fig,ax,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,im,cax)
         if self.NewGUICax:
@@ -909,19 +925,21 @@ class BicAn:
             ax  = args[1]
             cax = self.CaxHands[0]
 
-        _, cbarstr = self.WhichPlot()
-
         if (self.PlotSlice is not None) and self.BicOfTime:
             n,_,m = self.sg.shape
             # 
             dumsg = self.sg[:,self.PlotSlice,:].reshape((n,1,m))
             
             if self._Nseries==1:
-                dum,_ = SpecToBispec(dumsg,self.BicVec,self.LilGuy)
+                b2,B = SpecToBispec(dumsg,self.BicVec,self.LilGuy)
             else:
-                dum,_ = SpecToCrossBispec(dumsg,self.BicVec,self.LilGuy)   
+                b2,B = SpecToCrossBispec(dumsg,self.BicVec,self.LilGuy)   
+
+            dum,cbarstr = self.WhichPlot(local=B)
+            dum = b2 if self.PlotType=='bicoh' else dum
+
         else:
-            dum,_ = self.WhichPlot()
+            dum,cbarstr = self.WhichPlot()
 
         if self._Nseries==1:
             f = self.fv/10**self.FScale
@@ -1014,7 +1032,7 @@ class BicAn:
         return
 
 
-    def WhichPlot(self):
+    def WhichPlot(self,local=None):
     # ------------------
     # Helper method for plots
     # ------------------
@@ -1023,9 +1041,19 @@ class BicAn:
             dum = self.bc
             cbarstr = r'$b^2(f_1,f_2)$'
         elif guy in ['abs','real','imag','angle']:
-            dum = eval('np.{}(self.bs)'.format(guy))
-            cbarstr = r'%s%s $\mathcal{B}(f_1,f_2)$' % (guy[0].upper(),guy[1:].lower())
-            cbarstr = r'$\beta(f_1,f_2)$' if guy=='angle' else cbarstr
+            if local is None:
+                dum = eval('np.%s(self.bs)' % guy)
+                Bstr = r'\mathcal{B}'
+            else:
+                dum = eval('np.%s(local)' % guy)
+                Bstr = r'\widetilde{\mathcal{B}}'
+            ###dum = eval('np.{}(self.bs)'.format(guy)) if local is None else eval('np.{}(local)'.format(guy))
+            if guy in ['real','imag']:
+                cbarstr = r'%s%s $%s(f_1,f_2)$' % (guy[0].upper(),guy[1:].lower(),Bstr)
+            elif guy=='abs':
+                cbarstr = r'$|%s(f_1,f_2)|$' % Bstr
+            elif guy=='angle':
+                cbarstr = r'$\beta(f_1,f_2)$'
         elif guy == 'mean':
             dum = self.mb
             cbarstr = r'$\langle b^2(f_1,f_2)\rangle$'
@@ -1377,15 +1405,16 @@ class BicAn:
         elif key == 'h':
             choiceBox()
             print('Some kind of help menu here!')
-        elif key == 'X':
+        elif key == 'X': # Reset GUI
             self.PlotSlice = None
             self.BicOfTime = False
+            self.PlotType = 'bicoh'
         elif key == 'T':
             self.BicOfTime = not self.BicOfTime
         elif key == 'right':
-            self.PlotSlice = 0 if self.PlotSlice is None else self.PlotSlice % len(self.tv) 
+            self.PlotSlice = 0 if self.PlotSlice is None else (self.PlotSlice + 10) % len(self.tv) 
         elif key == 'left':
-            self.PlotSlice = 0 if self.PlotSlice is None else (self.PlotSlice - 1) % len(self.tv)
+            self.PlotSlice = len(self.tv)-1 if self.PlotSlice is None else (self.PlotSlice - 10) % len(self.tv)
         else:
             return
 
@@ -1731,14 +1760,14 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
     return spec,afft,freq_vec,time_vec,err,Ntoss
 
 
-def ApplyCWT(sig,samprate,sigma,limFreq=2):
+def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0):
 # ------------------
 # Wavelet static method
 # ------------------
     Nsig,N = sig.shape
     nyq    = Nsig//2
 
-    lim = Nsig//limFreq
+    lim = int(Nsig/limFreq)
 
     f0 = samprate/Nsig
     freq_vec = f0 * np.arange(nyq) # Frequency vector as calculated by FFT
@@ -1747,7 +1776,7 @@ def ApplyCWT(sig,samprate,sigma,limFreq=2):
     CWT  = np.zeros((lim,nyq,N),dtype=complex)
 
     # Morlet wavelet in frequency space
-    Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
+    Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a**0) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
 
     for k in range(N):
         fft_sig = np.fft.fft(sig[:,k])
