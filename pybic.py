@@ -60,6 +60,8 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 8/16/2023 -> Added LineColor property from BicAn.m for adding line plots
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/03/2023 -> Added "intermittent" quadratic coupling ('d3dtest') option,
 # changed some of the default labels ['\mathcal{P}(t,f)'->'X(t,f)'] for STFT,
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -224,6 +226,7 @@
 # *_ Add buttons and callbacks from Matlab
 # ** Swap out "dum" variables for more literate ones
 # ** Comment the code!!!
+# ** Fix butt-ugly inputs to PlotPointOut children!
 
 # Methods left:
 #{
@@ -247,6 +250,7 @@ from tkinter import messagebox, filedialog, ttk
 # Extra, definitely-not-bug-tested stuff
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib import cm
 from tkinter import *
 #import pandas as pd
 
@@ -279,6 +283,7 @@ class BicAn:
     FreqRes   = 0.
     SubInt    = 512
     Step      = 128
+    LimFreq   = 2
     Window    = 'hann'       
     Sigma     = 0.
     CalcCOI   = False
@@ -303,8 +308,9 @@ class BicAn:
     TickLabel = 'normal'
     LineWidth = 2
     FontSize  = 20
-    PlotSlice = 0
+    PlotSlice = None
     PlotSig   = 0
+    BicOfTime = False
 
     Verbose   = False
     Detrend   = False
@@ -374,11 +380,26 @@ class BicAn:
             # else:
             #     print('Wrong class!')
 
+            if attr in ['PlotType','SpecType','TScale','FScale']:
+                if attr=='PlotType':
+                    opts = ['bicoh','abs','real','imag','angle','mean','std','hybrid']
+                elif attr=='SpecType':
+                    opts = ['fft','stft','fourier','wave','wavelet','cwt']
+                elif attr in ['TScale','FScale']:
+                    opts = [-9,-6,-3,-2,-1,0,3,6,9,12]
+
+                if val not in opts:
+                    print('***WARNING*** :: Invalid input! "%s" does not correspond to an option.' % val)
+                    print('Valid are:',opts)
+                    # Keep current option
+                    val = eval('self.%s' % attr)
+
             self.__dict__[attr] = val
 
             if attr=='SubInt':
                 self.FreqRes = self.MaxRes
                 print('***NOTE*** :: Resolution set to maximum!')
+  
         return
 
 
@@ -388,8 +409,8 @@ class BicAn:
         return self.SampRate / self.SubInt
 
     @property
-    def NFreq(self):   # Number of Fourier bins
-        return int(self.SampRate / self.FreqRes)
+    def NFreq(self):   # Number of Fourier bins  
+        return int(self.SampRate / self.FreqRes / self.LimFreq)
 
     @property
     def _Nseries(self): # Number of time series
@@ -398,8 +419,11 @@ class BicAn:
     @property
     def Samples(self): # Samples in data
         #val = len(self.Raw) if len(self.Processed)==0 else len(self.Processed)
-        val = max(self.Raw.shape) if len(self.Processed)==0 else max(self.Processed.shape)
-        return val
+        return max(self.Raw.shape) if len(self.Processed)==0 else max(self.Processed.shape)
+
+    @property
+    def LineColor(self): # For coloring plots
+        return eval('cm.%s( np.linspace(0,1,256) )[:,0:3]' % self.CMap)
 
 
     def ParseInput(self,inData,kwargs):
@@ -425,8 +449,8 @@ class BicAn:
                 #### Should this be global?
                 siglist = ['demo','classic','tone','noisy','2tone','3tone','4tone',
                             'line','circle','fast_circle','quad_couple','d3dtest','cube_couple',
-                            'coherence','cross_2tone','cross_3tone','cross_circle',
-                            '3tone_short','cross_3tone_short','helix']
+                            'coherence','cross_2tone','cross_3tone','cross_circle','amtest',
+                            '3tone_short','circle_oversample','cross_3tone_short','helix']
                 if instr == 'input':
                     # Start getfile prompt
                     # root = tk.Tk()
@@ -620,13 +644,13 @@ class BicAn:
         if self.Samples>self._WarnSize and self.SizeWarn:
             self.SizeWarnPrompt(self.Samples)
 
-        CWT,acwt,f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma)
+        CWT,acwt,f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma,self.LimFreq)
 
         if self.CalcCOI:
             nz = np.zeros((len(self.Processed),1))
             nz[0,:] = 1
             nz[-1,:] = 1
-            nzCWT,_,_,_ = ApplyCWT(nz,self.SampRate,self.Sigma)
+            nzCWT,_,_,_ = ApplyCWT(nz,self.SampRate,self.Sigma,self.LimFreq)
             for k in range(self._Nseries):
                 coiMask = ( (abs(nzCWT)/np.max(abs(nzCWT)) ) < np.exp(-2) )
                 CWT[:,:,k] = CWT[:,:,k] * coiMask[:,:,0]
@@ -820,9 +844,10 @@ class BicAn:
             ax  = args[1]
 
         f = self.fv/10**self.FScale
+        dum = self.ft if self.PlotSlice is None else abs(self.sg[:,self.PlotSlice,:])
 
         for k in range(self._Nseries):
-            ax.semilogy(f,self.ft[:,k],linewidth=self.LineWidth)
+            ax.semilogy(f, dum[:,k]**2, linewidth=self.LineWidth, color=self.LineColor[50+40*k])
 
         fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         ystr = r'$\langle|\mathcal{%s}|^2\rangle\,\mathrm{[arb.]}$' % ('P' if self.SpecType=='stft' else 'W')
@@ -836,7 +861,7 @@ class BicAn:
         return
 
 
-    def PlotSpectro(self,*args):
+    def PlotSpectro(self,*args,vLim=None):
     # ------------------
     # Plot spectrograms
     # ------------------
@@ -855,10 +880,11 @@ class BicAn:
         t = self.tv/10**self.TScale
         f = self.fv/10**self.FScale
 
-        im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
+        if vLim is None:
+            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto')
+        else:
+            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto', vmin=vLim[0], vmax=vLim[1])
 
-
-        #im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig])), cmap=self.CMap, shading='auto', vmin=-4, vmax=2)
         cax = PlotLabels(fig,ax,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,im,cax)
         if self.NewGUICax:
             self.CaxHands[1] = cax
@@ -883,7 +909,19 @@ class BicAn:
             ax  = args[1]
             cax = self.CaxHands[0]
 
-        dum, cbarstr = self.WhichPlot()
+        _, cbarstr = self.WhichPlot()
+
+        if (self.PlotSlice is not None) and self.BicOfTime:
+            n,_,m = self.sg.shape
+            # 
+            dumsg = self.sg[:,self.PlotSlice,:].reshape((n,1,m))
+            
+            if self._Nseries==1:
+                dum,_ = SpecToBispec(dumsg,self.BicVec,self.LilGuy)
+            else:
+                dum,_ = SpecToCrossBispec(dumsg,self.BicVec,self.LilGuy)   
+        else:
+            dum,_ = self.WhichPlot()
 
         if self._Nseries==1:
             f = self.fv/10**self.FScale
@@ -996,7 +1034,10 @@ class BicAn:
             cbarstr = r'$\sigma_{b^2}(f_1,f_2)$'
         elif guy == 'hybrid':
             dum = self.bc * np.angle(self.bs) / np.pi
-            cbarstr = r'$b^2(f_1,f_2)\times\beta(f_1,f_2)$';
+            cbarstr = r'$b^2(f_1,f_2)\times\beta(f_1,f_2)$'
+        else:
+            dum = None
+            cbarstr = ''
         return dum,cbarstr
 
 
@@ -1103,11 +1144,11 @@ class BicAn:
             if self.PlotType in ['abs','imag','real']:
                 umm = eval('np.{}(Bi)'.format(self.PlotType))
                 if self.PlotType == 'abs':
-                    ax.semilogy(dumt,umm, linewidth=self.LineWidth, label=pntstr[k])
+                    ax.semilogy(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
                 else:
-                    ax.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k])
+                    ax.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
             elif self.PlotType == 'angle':
-                ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', label=pntstr[k])
+                ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', label=pntstr[k], color=self.LineColor[50+40*k])
 
         plt.xlim([dumt[0],dumt[-1]])
         plt.grid(True)    
@@ -1166,8 +1207,8 @@ class BicAn:
 
         if IsFreq:    
             for k in range(len(X)):
-                _,X[k] = arrmin(abs( dum - X[k] ))
-                _,Y[k] = arrmin(abs( dum - Y[k] ))
+                _,X[k] = arrmin(abs( fv - X[k] ))
+                _,Y[k] = arrmin(abs( fv - Y[k] ))
 
         fLocX = X
         fLocY = Y
@@ -1223,7 +1264,18 @@ class BicAn:
             self.AxHands[k].clear()
         
         self.PlotBispec(fig,self.AxHands[0])
+
         self.PlotSpectro(fig,self.AxHands[1])
+        if self.PlotSlice is not None:
+            It = self.PlotSlice
+
+            t  = self.tv/10**self.TScale
+            f  = self.fv/10**self.FScale
+            dt = self.SubInt/self.SampRate/10**self.TScale
+
+            self.AxHands[1].plot([t[It], t[It]],      [0, f[-1]], color='white', linewidth=2)
+            self.AxHands[1].plot([t[It]+dt, t[It]+dt],[0, f[-1]], color='white', linewidth=2)
+
         self.PlotPowerSpec(fig,self.AxHands[2])       
 
         plt.tight_layout()
@@ -1263,8 +1315,8 @@ class BicAn:
         if not qwer:
             print('Operation terminated by user.')
             self._RunBicAn = False
-        qwer.withdraw()
-        qwer.destroy()
+        #qwer.withdraw()
+        #qwer.destroy()
         return         # Bail if that seems scary! 
 
 
@@ -1296,17 +1348,8 @@ class BicAn:
         elif ax == self.AxHands[1]: # Check spectrogram
             tx = event.xdata
             t  = self.tv/10**self.TScale
-            _,It = arrmin( abs(t-tx) ) # Find closest point in time
-            self.PlotSlice = It
-
-            f  = self.fv/10**self.FScale
-            dt = self.SubInt/self.SampRate/10**self.TScale
-
-            ax.plot([t[It], t[It]],      [0, f[-1]], color='white', linewidth=2)
-            ax.plot([t[It]+dt, t[It]+dt],[0, f[-1]], color='white', linewidth=2)
-
-            plt.show()
-            #self.RefreshGUI()
+            _,self.PlotSlice = arrmin( abs(t-tx) ) # Find closest point in time
+            self.RefreshGUI()
 
         else:
             print('No callback there!')
@@ -1334,10 +1377,15 @@ class BicAn:
         elif key == 'h':
             choiceBox()
             print('Some kind of help menu here!')
+        elif key == 'X':
+            self.PlotSlice = None
+            self.BicOfTime = False
+        elif key == 'T':
+            self.BicOfTime = not self.BicOfTime
         elif key == 'right':
-            self.PlotSlice = self.PlotSlice % len(self.tv)
+            self.PlotSlice = 0 if self.PlotSlice is None else self.PlotSlice % len(self.tv) 
         elif key == 'left':
-            self.PlotSlice = (self.PlotSlice - 1) % len(self.tv)
+            self.PlotSlice = 0 if self.PlotSlice is None else (self.PlotSlice - 1) % len(self.tv)
         else:
             return
 
@@ -1416,7 +1464,7 @@ def FileDialog():
     return ans
 
 
-def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold'):
+def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none'):
 # ------------------
 # Convenience function
 # ------------------
@@ -1462,8 +1510,9 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
         cax.tick_params(labelsize=3*fsize//4)
-        # labels += cax.get_xticklabels()
-        # labels += cax.get_yticklabels()
+        if cbarweight=='ticks':
+            labels += cax.get_xticklabels()
+            labels += cax.get_yticklabels()
 
     #cid = fig.canvas.mpl_connect('button_press_event', GetClick)
 
@@ -1537,7 +1586,7 @@ def TestSignal(whatsig):
     elif dum == '2tone':
         inData,t,_ = SignalGen(fS,tend,fx=f1,Ay=1,fy=f2)
     elif dum in ['3tone','3tone_short']:
-        tend = tend if dum=='3tone' else 5
+        tend = 5 if dum=='3tone_short' else tend
         inData,t,_ = SignalGen(fS,tend,fx=f1,Ay=1,fy=f2,Az=1)
     elif dum == '4tone':
         # old was 13,17,54
@@ -1549,7 +1598,8 @@ def TestSignal(whatsig):
         inData = x1 + x2 + x3 + x4 + nz
     elif dum == 'line':
         inData,t,_ = SignalGen(fS,tend,fx=f1,Ay=1,fy=f2,Afy=10,Az=1,Ff=1/20)
-    elif dum == 'circle':
+    elif dum in ['circle','circle_oversample']:
+        fS = 10*fS if dum=='circle_oversample' else fS
         inData,t,_ = SignalGen(fS,tend,fx=f1,Afx=10,Ay=1,fy=f2,Afy=10,Az=1,Ff=1/20)
     elif dum == 'fast_circle':
         tend = 20
@@ -1567,9 +1617,20 @@ def TestSignal(whatsig):
         Az = -1
         x,t,_ = SignalGen(fS,tend,fx=f1,noisy=0)
         y,_,_ = SignalGen(fS,tend,fx=f2,noisy=0)
-        A,_,_ = SignalGen(fS,tend,Ax=Az,fx=Ff,noisy=0)
+        z,_,_ = SignalGen(fS,tend,Ax=0,Ay=1,fy=f1-f2,noisy=0)
+        A,_,_ = SignalGen(fS,tend,fx=Ff,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
-        inData = x + y + (A**4)*x*y + nz
+        inData = x + y - Az * (A**4)*x*y + 0.0*z + nz
+    elif dum == 'amtest':
+        fS = 500
+        f1 = 15
+        f2 = 93
+        f3 = 108
+        x,t,_ = SignalGen(fS,tend,fx=f1,noisy=0)
+        y,_,_ = SignalGen(fS,tend,fx=f2,noisy=0)
+        z,_,_ = SignalGen(fS,tend,fx=f3,noisy=0)
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
+        inData = x + y + x*y + nz
     elif dum == 'cube_couple':
         x,t,_ = SignalGen(fS,tend,fx=13,noisy=0)
         y,_,_ = SignalGen(fS,tend,fx=17,noisy=0)
@@ -1618,13 +1679,13 @@ def TestSignal(whatsig):
     return inData,t,fS
 
 
-def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
+def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,errlim=1e15):
 # ------------------
 # STFT static method
 # ------------------
     N = min(sig.shape)
     M = 1 + (max(sig.shape) - subint)//step
-    lim  = nfreq//2                 # lim = |_ Nyquist/res _|
+    lim  = nfreq                    # Most likey, lim = |_ Nyquist/res _|
     time_vec = np.zeros(M)          # Time vector
     err  = np.zeros((M,N))          # Mean information
     spec = np.zeros((lim,M,N),dtype=complex)      # Spectrogram
@@ -1632,7 +1693,7 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
     afft = np.zeros((lim,N))        # Coeffs for slice
     Ntoss = 0                       # Number of removed slices
     
-    win = HannWindow(nfreq)         # Apply Hann window
+    win = HannWindow(subint)        # Apply Hann window
     
     print('Applying STFT...      ')
     for m in range(M):
@@ -1641,13 +1702,15 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
         time_vec[m] = t0 + m*step/samprate
         for k in range(N):
             Ym = sig[m*step : m*step + subint, k] # Select subinterval    
-            Ym = Ym[0:nfreq]            # Take only what is needed for res
-            if detrend:                 # Remove linear least-squares fit
+            # Removing this b/c it negates the point of nfreq
+            #Ym = Ym[0:nfreq]            # Take only what is needed for res
+            if detrend:                  # Remove linear least-squares fit
                 Ym = ApplyDetrend(Ym)
             mean = sum(Ym)/len(Ym)
-            Ym = win*(Ym-mean)  # Remove DC offset, multiply by window
+            Ym = win*(Ym-mean)   # Remove DC offset, multiply by window
 
-            DFT = np.fft.fft(Ym)/nfreq  # Limit and normalize by vector length
+            DFT = np.fft.fft(Ym) # Compute FFT
+            DFT /= len(DFT)      # Normalize by vector length
 
             fft_coeffs[0:lim,k] = DFT[0:lim]     # Get interested parties
             dumft    = abs(fft_coeffs[:,k])**2   # Dummy for abs(coeffs)^2
@@ -1662,24 +1725,26 @@ def ApplySTFT(sig,samprate,subint,step,nfreq,t0,detrend,errlim):
 
     print('\b\b\b^]\n')
     
-    freq_vec = np.arange(nfreq)*samprate/nfreq
-    freq_vec = freq_vec[0:lim] 
+    freq_vec = np.arange(lim)*samprate/subint
+    #freq_vec = freq_vec[0:lim] 
     afft /= M     
     return spec,afft,freq_vec,time_vec,err,Ntoss
 
 
-def ApplyCWT(sig,samprate,sigma):
+def ApplyCWT(sig,samprate,sigma,limFreq=2):
 # ------------------
 # Wavelet static method
 # ------------------
     Nsig,N = sig.shape
     nyq    = Nsig//2
 
+    lim = Nsig//limFreq
+
     f0 = samprate/Nsig
     freq_vec = f0 * np.arange(nyq) # Frequency vector as calculated by FFT
     
-    acwt = np.zeros((nyq,N))
-    CWT  = np.zeros((nyq,nyq,N),dtype=complex)
+    acwt = np.zeros((lim,N))
+    CWT  = np.zeros((lim,nyq,N),dtype=complex)
 
     # Morlet wavelet in frequency space
     Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
@@ -1688,20 +1753,23 @@ def ApplyCWT(sig,samprate,sigma):
         fft_sig = np.fft.fft(sig[:,k])
         fft_sig = fft_sig[0:nyq]
 
+        # Deal with DC bin?
+        # CWT[0,:,k] = (np.pi**0.25)*np.sqrt(2*sigma) * fft_sig[0]
+
         print('Applying CWT...      ')
-        for a in range(nyq-1):
-            LoadBar(a,nyq)
+        for a in range(lim-1):
+            LoadBar(a,lim)
             # Apply for each scale (read: frequency)
             dum = np.fft.ifft(fft_sig * Psi(a+1))                # Linear scale (f_a = a*f0)
             #dum = np.fft.ifft(fft_sig * Psi( 2**((a+1)/12) ))   # Equal-tempered
             #dum = np.fft.ifft(fft_sig * Psi( (a+1)/10 ) )
             CWT[a+1,:,k] = dum
 
-            acwt[a,k]  = sum(abs(dum)**2) / len(dum)
+            acwt[a+1,k]  = sum(abs(dum)**2) / len(dum)
         print('\b\b\b^]\n')
 
-    time_vec = np.arange(0,Nsig,2)/samprate
-    return CWT,acwt,freq_vec,time_vec
+    time_vec = 2 * np.arange(nyq)/samprate
+    return CWT,acwt,freq_vec[0:lim],time_vec
 
 
 def SpecToCoherence(spec,lilguy):
@@ -2017,6 +2085,10 @@ def nRandSumLessThanUnityFAST(n):
 # ------------------
 # Outputs n numbers whose sum is < 1
 # ------------------
+
+### DOESN"T WORK! NUMBERS ARE NOT EVENLY DISTRIBUTED
+# ~> Is faster!
+
     S = 1
     dum = np.zeros(n)
     for k in range(n):
