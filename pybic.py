@@ -331,6 +331,7 @@ class BicAn:
     LineWidth = 2
     FontSize  = 20
     PlotDPI   = 150
+    SpecVLim  = None
     PlotSlice = None
     PlotSig   = 0
     BicOfTime = False
@@ -999,8 +1000,8 @@ class BicAn:
 
         t = self.tc.flatten()
         T = self.ts.flatten()
-        #q = t>Tval
-        q = abs(t-Tval) < 0.1
+        q = t>Tval
+        #q = abs(t-Tval) < 0.1
 
         dum = t[q] if colorTricoh else np.angle(T[q])
         cbarstr = r'$t^2(f_1,f_2,f_3)$' if colorTricoh else r'$\gamma(f_1,f_2,f_3)$'
@@ -1194,7 +1195,8 @@ class BicAn:
                     else:
                         ax.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
                 elif self.PlotType == 'angle':
-                    ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', markersize=1, label=pntstr[k], color=self.LineColor[50+40*k])
+                    #ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', markersize=1, label=pntstr[k], color=self.LineColor[50+40*k])
+                    ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
 
             ax.set_xlim([dumt[0],dumt[-1]])
             ax.grid(visible=True,which='minor',linewidth=0.5,color=[0.9,0.9,0.9])  
@@ -1233,12 +1235,14 @@ class BicAn:
         return
 
 
-    def PlotPointOut(self,X,Y,IsFreq=False):
+    def PlotPointOut(self,X,Y,IsFreq=False,PlotAll=False,SaveAs=None):
     # ------------------
     # Plot value of b^2 over time
     # ------------------
 
-        if self.PlotType == 'hybrid':  
+        if self.PlotType=='hybrid' or PlotAll: 
+
+            old_plotType = self.PlotType
 
             fig = plt.figure(dpi=self.PlotDPI)
 
@@ -1247,11 +1251,11 @@ class BicAn:
             ax3 = plt.subplot(223)
             ax4 = plt.subplot(224)
 
-            print('one...',X,Y)
+            print('input is...',X,Y)
             self.PlotHelper('b2Prob',fig=fig,ax=ax1,X=X,Y=Y,IsFreq=IsFreq)
 
             # For some reason this changes X and Y???
-            print('two...',X,Y)
+            print('but now is...',X,Y)
 
             self.PlotHelper('Phasor',fig=fig,ax=ax3,X=X,Y=Y)
 
@@ -1261,22 +1265,26 @@ class BicAn:
             self.PlotType = 'abs'
             self.PlotHelper('BvsTime',fig=fig,ax=ax4,X=X,Y=Y)
 
-            self.PlotType = 'hybrid'
+            self.PlotType = old_plotType
 
-            ax1.legend(fontsize=self.FontSize//2)
-            ax2.legend(fontsize=self.FontSize//2)
+            ax1.legend(fontsize=2*self.FontSize//3)
+            ax2.legend(fontsize=2*self.FontSize//3)
             #ax3.legend()
-            ax4.legend(fontsize=self.FontSize//2)
+            ax4.legend(fontsize=2*self.FontSize//3)
 
             plt.tight_layout()
-            plt.show()
-
+            if SaveAs is None:
+                plt.show()
+            else:
+                fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
+                plt.close(fig)
 
         elif self.PlotType == 'bicoh':
             self.PlotHelper('b2Prob',X=X,Y=Y,IsFreq=IsFreq)
 
-        else:
+        elif self.PlotType == 'abs':
             self.PlotHelper('BvsTime',X=X,Y=Y,IsFreq=IsFreq)
+
         return
         
 
@@ -1296,7 +1304,7 @@ class BicAn:
         
         self.PlotBispec(fig,self.AxHands[0])
 
-        self.PlotSpectro(fig,self.AxHands[1])
+        self.PlotSpectro(fig,self.AxHands[1],vLim=self.SpecVLim)
         if self.PlotSlice is not None:
             It = self.PlotSlice
 
@@ -1356,6 +1364,7 @@ class BicAn:
     # Callback for clicks
     # ------------------
         ax = event.inaxes
+        print('ax is',ax)
         if ax == self.AxHands[0]: # Check bispectrum
             fx = event.xdata
             fy = event.ydata
@@ -1369,13 +1378,19 @@ class BicAn:
             _,Ix = arrmin( abs(f-fx) )
             _,Iy = arrmin( abs(f-fy) )
 
+            # Debug/diagnostic data
             print(buf)
             print(Ix,Iy)
             print('button=',event.button)
 
-            self.PlotPointOut([Ix],[Iy])
-            # self.clickx = x
-            # self.clicky = y
+            ax.plot(f[Ix],f[Iy],'x',color='white')
+
+            # 1 = MouseButton.LEFT
+            # 3 = MouseButton.RIGHT
+            if event.button==1:
+                self.PlotPointOut([Ix],[Iy])
+            if event.button==3:
+                self.PlotPointOut([Ix],[Iy],PlotAll=True)
 
         elif ax == self.AxHands[1]: # Check spectrogram
             tx = event.xdata
