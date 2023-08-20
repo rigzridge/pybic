@@ -61,9 +61,17 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 8/19/2023 -> Smoothed out edges in PlotPointOut() so that legends actually
+# appear [switched single plt.legend() call with four ax<#>.legend() calls],
+# 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/18/2023 -> Fixed issue with plotting local (inst.) b^2 instead of local  
 # bispectrum when PlotType~='bicoh' and BicOfTime=True, required additions to
-# WhichPlot() for proper strings; right arrow action fixed
+# WhichPlot() for proper strings; right arrow action fixed; PlotTimeline()
+# module method added to plot lines with smooth color change, used for phasor
+# plots; massive rewrite to PlotpointOut() and friends... now using switchyard
+# (ish) idea in a single function [PlotHelper(str) w/ str='b2Prob', 'BvsTime'
+# or 'Phasor'], same thing might benefit PlotBispec(), PlotSpectro(), etc.
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/17/2023 -> Now using LimFreq property to make low-frequency analysis
 # simpler, see 'circle_oversample' option; added set methods for 'PlotType',
@@ -322,6 +330,7 @@ class BicAn:
     TickLabel = 'normal'
     LineWidth = 2
     FontSize  = 20
+    PlotDPI   = 150
     PlotSlice = None
     PlotSig   = 0
     BicOfTime = False
@@ -866,7 +875,7 @@ class BicAn:
             ax.semilogy(f, dum[:,k], linewidth=self.LineWidth, color=self.LineColor[50+40*k])
 
         fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        ystr = r'$\langle|\mathcal{%s}|^2\rangle\,\mathrm{[arb.]}$' % ('P' if self.SpecType=='stft' else 'W')
+        ystr = r'$\langle|%s(f)|^2\rangle\,\mathrm{[arb.]}$' % ('X' if self.SpecType=='stft' else r'\mathcal{W}')
         PlotLabels(fig,ax,[fstr,ystr],self.FontSize,self.CbarNorth)
         ax.set_xlim(f[0], f[-1])
         #plt.grid(True)
@@ -998,7 +1007,7 @@ class BicAn:
 
         #ax = plt.figure().add_subplot(projection='3d')
         #fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
-        fig = plt.figure()
+        fig = plt.figure(dpi=self.PlotDPI)
         ax = fig.add_subplot(111, projection='3d')
         im = ax.scatter(x[q],y[q],z[q],c=dum,cmap=self.CMap)
 
@@ -1089,7 +1098,7 @@ class BicAn:
         self.PlotType = old_plot
 
 
-    def Plotb2Prob(self,fLocX,fLocY,X,Y,fig=None,ax=None,fv=None,Ntrials=200,b2bins=100,cVal=0.999):
+    def PlotHelper(self,whatPlot,X,Y,IsFreq=False,fig=None,ax=None,Ntrials=200,b2bins=100,cVal=0.999):
     # ------------------
     # Estimate and plot distribution of b2 for single point
     # ------------------
@@ -1099,124 +1108,122 @@ class BicAn:
             doShow = True
             fig, ax = plt.subplots()
 
-        if fv is None:
-            fv = self.fv/10**self.FScale
-        
-        g = np.zeros((Ntrials))
-        xstr = r'$(%3.1f,%3.1f)\,\mathrm{%sHz}$' % ( fv[ fLocX[0] ], fv[ fLocY[0] ], ScaleToString(self.FScale) )
+        # Okay, so ClickPlot() sends in X and Y w/ based on:
+        ## self.fv if _Nseries==1
+        ## self.ff if else
+        fLocX = X
+        fLocY = Y
 
-        print('Calculating distribution for {}...      '.format(xstr))
-        for k in range(Ntrials):
-            LoadBar(k,Ntrials)
-            g[k],_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
-        print('\b\b^]\n')  
+        # Create dummy frequency vector
+        fv = self.fv/10**self.FScale if self._Nseries==1 else self.ff/10**self.FScale
 
-        # Limit b^2, create vector, and produce histogram 
-        b2lim  = 1 
-        b2vec  = np.linspace(0,b2lim,b2bins)
-        cnt,_  = np.histogram(g, bins=b2bins, range=(0,b2lim) )
-
-        # Integrate count
-        intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
-        # exp dist -> (1/m)exp(-x/m)
-        m = np.mean(g)
-        ax.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none', label='randomized')
-        # More accurate distribution... Just more complicated! (Get to it later...)
-        #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
-        b2dist = (1/m)*np.exp(-b2vec/m)
-        ax.plot(b2vec, b2dist, linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
-
-        b2crit = -m*np.log(1 - cVal)
-        b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
-        yrange = [0, b2dist[0]]
-        #yrange = [1e-3, b2dist[0]*10]
-        ax.plot([b2crit,b2crit], yrange, label=r'$99.9\%$ CI')
-        ax.plot([b2true,b2true], yrange, label='Measured')
-
-        PlotLabels(fig,ax,['$b^2$' + xstr,r'$\mathrm{Probability\,density}$'], self.FontSize, self.CbarNorth)
-
-        ax.set_xlim(0,1)
-        ax.set_ylim(yrange[0],yrange[1])
-
-        if doShow:
-            plt.tight_layout()
-            plt.legend()
-            plt.show()
-        return
-
-
-    def PlotBvsTime(self,fLocX,fLocY,X,Y,fig=None,ax=None,fv=None):
-    # ------------------
-    # Estimate and plot distribution of b2 for single point
-    # ------------------
-        doShow = False
-        if fig is None:
-            doShow = True
-            fig, ax = plt.subplots()
-
-        if fv is None:
-            fv = self.fv/10**self.FScale
-
-        dumt = self.tv/10**self.TScale
         pntstr = ['']*len(X)
         for k in range(len(X)):
+            # Negative frequencies are tricky when _Nseries==1
+            #X[k] = abs(X[k]) if self._Nseries==1 else 
 
-            # Calculate "point-out"
-            _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
-            if Bi is None:
-                print('No bispectral data?')
-                #return
+            # If user chooses IsFreq option, we convert frequencies back to indices
+            if IsFreq:    
+                _,X[k] = arrmin(abs( fv - X[k] ))
+                _,Y[k] = arrmin(abs( fv - Y[k] ))
 
-            pntstr[k] = r'$(%3.2f,%3.2f)\,\mathrm{%sHz}$' % ( fv[ fLocX[k] ], fv[ fLocY[k] ], ScaleToString(self.FScale) )
-
-            if self.PlotType in ['abs','imag','real']:
-                umm = eval('np.{}(Bi)'.format(self.PlotType))
-                if self.PlotType == 'abs':
-                    ax.semilogy(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
-                else:
-                    ax.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
-            elif self.PlotType == 'angle':
-                ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', label=pntstr[k], color=self.LineColor[50+40*k])
-
-        plt.xlim([dumt[0],dumt[-1]])
-        plt.grid(True)    
-
-        _,ystr = self.WhichPlot()
-        if self.PlotType == 'angle':
-            ystr = ystr + r'/$\pi$'
-        tstr = r'$\mathrm{Time\,[%ss]}$' % ( ScaleToString(self.TScale) )
-        PlotLabels(fig,ax,[tstr,ystr],self.FontSize,self.CbarNorth)
-
-        if doShow:
-            plt.tight_layout()
-            plt.legend()
-            plt.show()
-        return
+            # Create strings to make cute graph labels
+            ###pntstr[k] = r'$(%.2f,%.2f)\,\mathrm{%sHz}$' % ( np.sign(X[k])*fv[ abs(X[k]) ], np.sign(Y[k])*fv[ abs(Y[k]) ], ScaleToString(self.FScale) )
+            pntstr[k] = r'$(%.2f,%.2f)\,\mathrm{%sHz}$' % ( fv[ X[k] ], fv[ Y[k] ], ScaleToString(self.FScale) )
 
 
-    def PlotPhasor(self,fLocX,fLocY,X,Y,fig=None,ax=None,fv=None):
-    # ------------------
-    # Estimate and plot distribution of b2 for single point
-    # ------------------
-        doShow = False
-        if fig is None:
-            doShow = True
-            fig, ax = plt.subplots()
+        if self._Nseries>1:
+            X = np.array(X) - len(self.fv)
+            Y = np.array(Y) - len(self.fv)
+        
+        if whatPlot=='b2Prob':
 
-        if fv is None:
-            fv = self.fv/10**self.FScale
+            g = np.zeros((Ntrials))
 
-        pntstr = r'$(%3.2f,%3.2f)\,\mathrm{%sHz}$' % ( fv[ fLocX[0] ], fv[ fLocY[0] ], ScaleToString(self.FScale) )
+            print('Calculating distribution for {}...      '.format(pntstr[0]))
+            for k in range(Ntrials):
+                LoadBar(k,Ntrials)
+                g[k],_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
+            print('\b\b^]\n')  
 
-        _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
-        Bi /= np.max(abs(Bi))
-        ax.plot(np.real(Bi),np.imag(Bi),'o',label=pntstr)
-        ax.set_xlim(-1,1)
-        ax.set_ylim(-1,1)
+            # Limit b^2, create vector, and produce histogram 
+            b2lim  = 1 
+            b2vec  = np.linspace(0,b2lim,b2bins)
+            cnt,_  = np.histogram(g, bins=b2bins, range=(0,b2lim) )
 
-        reStr = r'$\Re\,\mathcal{B}/|\mathcal{B}|_\mathrm{max}$'
-        imStr = r'$\Im\,\mathcal{B}/|\mathcal{B}|_\mathrm{max}$'
-        PlotLabels(fig,ax,[reStr,imStr],self.FontSize,self.CbarNorth)
+            # Integrate count
+            intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
+            # exp dist -> (1/m)exp(-x/m)
+            m = np.mean(g)
+            ax.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none', label='randomized')
+            # More accurate distribution... Just more complicated! (Get to it later...)
+            #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
+            b2dist = (1/m)*np.exp(-b2vec/m)
+            ax.plot(b2vec, b2dist, linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
+
+            b2crit = -m*np.log(1 - cVal)
+            b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
+            yrange = [0, b2dist[0]]
+            #yrange = [1e-3, b2dist[0]*10]
+            ax.plot([b2crit,b2crit], yrange, label=r'$99.9\%$ CI')
+            ax.plot([b2true,b2true], yrange, label='Measured')
+
+            PlotLabels(fig,ax,['$b^2$' + pntstr[0],r'$\mathrm{PDF}$'], self.FontSize, self.CbarNorth)
+
+            ax.set_xlim(0,1)
+            ax.set_ylim(yrange[0],yrange[1])
+            ax.grid(visible=True,which='minor',linewidth=0.5,color=[0.9,0.9,0.9])
+            ax.grid(visible=True,which='major')
+
+        elif whatPlot=='BvsTime':
+
+            dumt = self.tv/10**self.TScale
+            for k in range(len(X)):
+
+                # Calculate "point-out"
+                _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
+                if Bi is None:
+                    print('No bispectral data?')
+                    #return
+
+                if self.PlotType in ['abs','imag','real']:
+                    umm = eval('np.{}(Bi)'.format(self.PlotType))
+                    if self.PlotType == 'abs':
+                        ax.semilogy(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
+                        ###PlotTimeline(dumt,umm,ax=ax,lw=self.LineWidth,cmap='turbo',cbar=False)
+                    else:
+                        ax.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
+                elif self.PlotType == 'angle':
+                    ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', markersize=1, label=pntstr[k], color=self.LineColor[50+40*k])
+
+            ax.set_xlim([dumt[0],dumt[-1]])
+            ax.grid(visible=True,which='minor',linewidth=0.5,color=[0.9,0.9,0.9])  
+            ax.grid(visible=True,which='major')
+
+
+            _,ystr = self.WhichPlot(local=self.bs)
+            if self.PlotType == 'angle':
+                ystr = ystr + r'/$\pi$'
+            tstr = r'$t\, [\mathrm{%ss}]$' % ( ScaleToString(self.TScale) )
+            PlotLabels(fig,ax,[tstr,ystr],self.FontSize,self.CbarNorth)
+
+        elif whatPlot=='Phasor':
+
+            _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
+            Bi /= np.max(abs(Bi))
+
+            t = self.tv/10**self.TScale
+            tstr = r'$t\, [\mathrm{%ss}]$' % ScaleToString(self.TScale)
+            PlotTimeline(np.real(Bi),np.imag(Bi),t=t,fig=fig,ax=ax,lw=self.LineWidth,cmap='twilight',cbar=tstr)
+            ###ax.plot(np.real(Bi),np.imag(Bi),'o',label=pntstr)
+            ax.set_xlim(-1,1)
+            ax.set_ylim(-1,1)
+            ax.grid(visible=True,which='minor',linewidth=0.5,color=[0.9,0.9,0.9])
+            ax.grid(visible=True,which='major')
+
+            reStr = r'$\mathcal{R}e(\widetilde{\mathcal{B}})/|\widetilde{\mathcal{B}}|_\mathrm{max}$'
+            imStr = r'$\mathcal{I}m(\widetilde{\mathcal{B}})/|\widetilde{\mathcal{B}}|_\mathrm{max}$'
+            PlotLabels(fig,ax,[reStr,imStr],self.FontSize,self.CbarNorth)
 
         plt.grid(True)
         if doShow:
@@ -1231,49 +1238,45 @@ class BicAn:
     # Plot value of b^2 over time
     # ------------------
 
-        fv = self.fv/10**self.FScale
-
-        if IsFreq:    
-            for k in range(len(X)):
-                _,X[k] = arrmin(abs( fv - X[k] ))
-                _,Y[k] = arrmin(abs( fv - Y[k] ))
-
-        fLocX = X
-        fLocY = Y
-
-        if self._Nseries>1:
-            fv = self.ff/10**self.FScale
-            X = np.array(X) - len(self.fv)
-            Y = np.array(Y) - len(self.fv)
-
         if self.PlotType == 'hybrid':  
 
-            fig = plt.figure()
+            fig = plt.figure(dpi=self.PlotDPI)
 
             ax1 = plt.subplot(221)
             ax2 = plt.subplot(222)
             ax3 = plt.subplot(223)
             ax4 = plt.subplot(224)
 
-            self.Plotb2Prob(fig=fig,ax=ax1,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
-            self.PlotPhasor(fig=fig,ax=ax3,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+            print('one...',X,Y)
+            self.PlotHelper('b2Prob',fig=fig,ax=ax1,X=X,Y=Y,IsFreq=IsFreq)
+
+            # For some reason this changes X and Y???
+            print('two...',X,Y)
+
+            self.PlotHelper('Phasor',fig=fig,ax=ax3,X=X,Y=Y)
+
             self.PlotType = 'angle'
-            self.PlotBvsTime(fig=fig,ax=ax2,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+            self.PlotHelper('BvsTime',fig=fig,ax=ax2,X=X,Y=Y)
+
             self.PlotType = 'abs'
-            self.PlotBvsTime(fig=fig,ax=ax4,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+            self.PlotHelper('BvsTime',fig=fig,ax=ax4,X=X,Y=Y)
+
             self.PlotType = 'hybrid'
 
+            ax1.legend(fontsize=self.FontSize//2)
+            ax2.legend(fontsize=self.FontSize//2)
+            #ax3.legend()
+            ax4.legend(fontsize=self.FontSize//2)
+
             plt.tight_layout()
-            plt.legend()
             plt.show()
 
-            #self.PlotPhasor(fig=fig,ax=ax,fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
 
         elif self.PlotType == 'bicoh':
-            self.Plotb2Prob(fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+            self.PlotHelper('b2Prob',X=X,Y=Y,IsFreq=IsFreq)
 
         else:
-            self.PlotBvsTime(fv=fv,fLocX=fLocX,fLocY=fLocY,X=X,Y=Y)
+            self.PlotHelper('BvsTime',X=X,Y=Y,IsFreq=IsFreq)
         return
         
 
@@ -1316,7 +1319,7 @@ class BicAn:
     # ------------------
     # GUI test
     # ------------------
-        fig = plt.figure()
+        fig = plt.figure(dpi=self.PlotDPI)
 
         ax1 = plt.subplot(121)
         ax2 = plt.subplot(222)
@@ -1356,10 +1359,7 @@ class BicAn:
         if ax == self.AxHands[0]: # Check bispectrum
             fx = event.xdata
             fy = event.ydata
-            buf = 'fx = %3.3f, fy = %3.3f' % (fx, fy)
-            print(buf)
-
-            print('button=',event.button)
+            buf = 'fx = %.3f, fy = %.3f' % (fx, fy)
 
             f = self.fv/10**self.FScale
             if self._Nseries>1:
@@ -1368,6 +1368,10 @@ class BicAn:
 
             _,Ix = arrmin( abs(f-fx) )
             _,Iy = arrmin( abs(f-fy) )
+
+            print(buf)
+            print(Ix,Iy)
+            print('button=',event.button)
 
             self.PlotPointOut([Ix],[Iy])
             # self.clickx = x
@@ -1466,16 +1470,18 @@ class BicAn:
     # ------------------
     # For a given test vector of freqs, check nth order coupling
     # ------------------
-      n = len(f)
-      mask = bin_mat(n)
-      L = 2**(n-1)
-      out = np.zeros(L)
-      for k in range(L):
-        dum = f * mask[k,:]
-        out[k],_,_ = GetPolySpec(self.sg,dum,self.LilGuy)
-        print(dum,'~>',out[k])
-      print('Mean is ',np.mean(out))
-      return out
+        f = f if self._Nseries==1 else np.array(X) - len(self.fv)
+
+        n = len(f)
+        mask = bin_mat(n)
+        L = 2**(n-1)
+        out = np.zeros(L)
+        for k in range(L):
+            dum = f * mask[k,:]
+            out[k],_,_ = GetPolySpec(self.sg,dum,self.LilGuy)
+            print(dum,'~>',out[k])
+        print('Mean is ',np.mean(out))
+        return out
 
 
 # Module methods
@@ -1493,7 +1499,7 @@ def FileDialog():
     return ans
 
 
-def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none'):
+def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True):
 # ------------------
 # Convenience function
 # ------------------
@@ -1501,6 +1507,9 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
 
     # Reduce fontsize for 3D plots
     fsize = fsize if n<4 else 3*fsize//4
+
+    # Kill grid if n>2
+    grid = grid if n<=2 else False
 
     # Initialize list for tick label info
     labels = []
@@ -1520,7 +1529,7 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         labels += cbar.ax.get_xticklabels()
         labels += cbar.ax.get_yticklabels()
 
-    ax.tick_params(labelsize=fsize)
+    ax.tick_params(labelsize=9*fsize//10)
     ax.minorticks_on()
 
     if n==3:
@@ -1553,6 +1562,10 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
     # This is a robust solution, and doesn't have bad practice "set current axis" calls
     for label in labels:
         label.set_fontweight(tickweight)
+
+    if grid:
+        ax.grid(visible=True,which='minor',linewidth=0.5,color=[0.9,0.9,0.9])
+        ax.grid(visible=True,which='major')
     return cax
 
 
@@ -2051,6 +2064,42 @@ def LoadBar(m,M):
     # Changed m/(M-1) to (m+1)/M to avoid /0 errors 
     print(buf)
     return
+
+
+def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None):
+# ------------------
+# Plot line with color
+# ------------------
+    ### Sourced from https://matplotlib.org/3.1.1/gallery/lines_bars_and_markers/multicolored_line.html
+    from matplotlib.collections import LineCollection
+
+    if fig is None:
+        fig, ax = plt.subplots()
+
+    if t is None:
+        t = np.linspace(0,1,x.shape[0]) # "time" variable
+
+    # set up a list of (x,y) points
+    points = np.array([x,y]).transpose().reshape(-1,1,2)
+
+    # set up a list of segments
+    segs = np.concatenate([points[:-1],points[1:]],axis=1)
+
+    # make the collection of segments
+    lc = LineCollection(segs, cmap=plt.get_cmap(cmap))
+    lc.set_array(t) # color the segments by our parameter
+    lc.set_linewidth(lw)
+
+    # plot the collection
+    line = ax.add_collection(lc) # add the collection to the plot
+    if cbar is not None:
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes('top', size='5%', pad=0.05)
+        fig.colorbar(line, cax=cax, orientation='horizontal')   
+        cax.xaxis.set_label_position('top') 
+        cax.xaxis.tick_top()     
+        cax.set_xlabel(cbar) ### fontsize=fsize, fontweight=fweight)
+        # fig.colorbar(line, ax=ax, label=cbar)
 
 
 # def GetClick(event):
