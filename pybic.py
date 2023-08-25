@@ -61,6 +61,8 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 8/24/2023 -> Added a few helpful defaults in SpecTo...(), ...Spec() fxns
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/19/2023 -> Smoothed out edges in PlotPointOut() so that legends actually
 # appear [switched single plt.legend() call with four ax<#>.legend() calls],
 # 
@@ -331,7 +333,8 @@ class BicAn:
     LineWidth = 2
     FontSize  = 20
     PlotDPI   = 150
-    SpecVLim  = None
+    SpecVLim  = []
+    NormBic   = False
     PlotSlice = None
     PlotSig   = 0
     BicOfTime = False
@@ -826,7 +829,7 @@ class BicAn:
 
                     cnt += 1
                     #if verbose:
-                    print("Searching neighbors... {}".format(cnt))
+                    print("Searching neighbors... %d" % cnt)
 
                     bestCoh_old = bestCoh
                     bestFreqs_old = 1*bestFreqs
@@ -859,7 +862,7 @@ class BicAn:
 
 
     ## Plot methods
-    def PlotPowerSpec(self,*args):
+    def PlotPowerSpec(self,*args,vLim=[]):
     # ------------------
     # Plot power spectrum
     # ------------------
@@ -879,7 +882,8 @@ class BicAn:
         ystr = r'$\langle|%s(f)|^2\rangle\,\mathrm{[arb.]}$' % ('X' if self.SpecType=='stft' else r'\mathcal{W}')
         PlotLabels(fig,ax,[fstr,ystr],self.FontSize,self.CbarNorth)
         ax.set_xlim(f[0], f[-1])
-        #plt.grid(True)
+        if len(vLim)==2:
+            ax.set_ylim(10**vLim[0],10**vLim[1])
 
         if len(args)==0:
             plt.tight_layout()
@@ -887,7 +891,7 @@ class BicAn:
         return
 
 
-    def PlotSpectro(self,*args,vLim=None):
+    def PlotSpectro(self,*args,vLim=[]):
     # ------------------
     # Plot spectrograms
     # ------------------
@@ -906,7 +910,7 @@ class BicAn:
         t = self.tv/10**self.TScale
         f = self.fv/10**self.FScale
 
-        if vLim is None:
+        if not len(vLim)==2:
             im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig]) + 0*1e-16), cmap=self.CMap, shading='auto')
         else:
             im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig]) + 0*1e-16), cmap=self.CMap, shading='auto', vmin=vLim[0], vmax=vLim[1])
@@ -923,7 +927,7 @@ class BicAn:
         return
 
 
-    def PlotBispec(self,*args):
+    def PlotBispec(self,*args,normb2=False):
     # ------------------
     # Plot bispectrum
     # ------------------
@@ -953,7 +957,10 @@ class BicAn:
 
         if self._Nseries==1:
             f = self.fv/10**self.FScale
-            im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
+            if normb2:
+                im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto', vmin=0, vmax=1)
+            else:
+                im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
             ax.set_ylim(f[0], f[-1]/2)
 
             # Draw triangle
@@ -962,7 +969,10 @@ class BicAn:
 
         else:
             f = self.ff/10**self.FScale
-            im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
+            if normb2:
+                im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto', vmin=0, vmax=1)
+            else:
+                im = ax.pcolormesh(f,f,dum, cmap=self.CMap, shading='auto')
             ax.set_ylim(f[0], f[-1])
         
         fstr1 = r'$f_1\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
@@ -1099,7 +1109,7 @@ class BicAn:
         self.PlotType = old_plot
 
 
-    def PlotHelper(self,whatPlot,X,Y,IsFreq=False,fig=None,ax=None,Ntrials=200,b2bins=100,cVal=0.999):
+    def PlotHelper(self,whatPlot,X,Y,IsFreq=False,CheckNeighbors=False,fig=None,ax=None,Ntrials=200,b2bins=100,cVal=0.999):
     # ------------------
     # Estimate and plot distribution of b2 for single point
     # ------------------
@@ -1132,10 +1142,16 @@ class BicAn:
             ###pntstr[k] = r'$(%.2f,%.2f)\,\mathrm{%sHz}$' % ( np.sign(X[k])*fv[ abs(X[k]) ], np.sign(Y[k])*fv[ abs(Y[k]) ], ScaleToString(self.FScale) )
             pntstr[k] = r'$(%.2f,%.2f)\,\mathrm{%sHz}$' % ( fv[ X[k] ], fv[ Y[k] ], ScaleToString(self.FScale) )
 
-
         if self._Nseries>1:
             X = np.array(X) - len(self.fv)
             Y = np.array(Y) - len(self.fv)
+
+        if CheckNeighbors and len(X)==1:
+            X = [X[0],X[0],X[0]-1,X[0]+1]
+            Y = [Y[0],Y[0]+1,Y[0],Y[0]]
+            self.PlotHelper(whatPlot=whatPlot,X=X,Y=Y,IsFreq=False,CheckNeighbors=CheckNeighbors,fig=fig,ax=ax,
+                Ntrials=Ntrials,b2bins=b2bins,cVal=cVal)
+            return
         
         if whatPlot=='b2Prob':
 
@@ -1235,7 +1251,7 @@ class BicAn:
         return
 
 
-    def PlotPointOut(self,X,Y,IsFreq=False,PlotAll=False,SaveAs=None):
+    def PlotPointOut(self,X,Y,IsFreq=False,PlotAll=False,SaveAs=None,CheckNeighbors=False):
     # ------------------
     # Plot value of b^2 over time
     # ------------------
@@ -1252,25 +1268,25 @@ class BicAn:
             ax4 = plt.subplot(224)
 
             print('input is...',X,Y)
-            self.PlotHelper('b2Prob',fig=fig,ax=ax1,X=X,Y=Y,IsFreq=IsFreq)
+            self.PlotHelper('b2Prob',fig=fig,ax=ax1,X=X,Y=Y,IsFreq=IsFreq,CheckNeighbors=CheckNeighbors)
 
             # For some reason this changes X and Y???
             print('but now is...',X,Y)
 
-            self.PlotHelper('Phasor',fig=fig,ax=ax3,X=X,Y=Y)
+            self.PlotHelper('Phasor',fig=fig,ax=ax3,X=X,Y=Y,CheckNeighbors=CheckNeighbors)
 
             self.PlotType = 'angle'
-            self.PlotHelper('BvsTime',fig=fig,ax=ax2,X=X,Y=Y)
+            self.PlotHelper('BvsTime',fig=fig,ax=ax2,X=X,Y=Y,CheckNeighbors=CheckNeighbors)
 
             self.PlotType = 'abs'
-            self.PlotHelper('BvsTime',fig=fig,ax=ax4,X=X,Y=Y)
+            self.PlotHelper('BvsTime',fig=fig,ax=ax4,X=X,Y=Y,CheckNeighbors=CheckNeighbors)
 
             self.PlotType = old_plotType
 
             ax1.legend(fontsize=2*self.FontSize//3)
-            ax2.legend(fontsize=2*self.FontSize//3)
+            #ax2.legend(fontsize=2*self.FontSize//3)
             #ax3.legend()
-            ax4.legend(fontsize=2*self.FontSize//3)
+            ax4.legend(fontsize=2*self.FontSize//3,loc='upper center',bbox_to_anchor=(0.35, 1.5),ncol=2)
 
             plt.tight_layout()
             if SaveAs is None:
@@ -1282,10 +1298,10 @@ class BicAn:
         elif self.PlotType == 'bicoh':
             self.PlotHelper('b2Prob',X=X,Y=Y,IsFreq=IsFreq)
 
-        elif self.PlotType == 'abs':
+        elif self.PlotType in ['abs','real','imag','angle']:
             self.PlotHelper('BvsTime',X=X,Y=Y,IsFreq=IsFreq)
 
-        return
+        return X,Y
         
 
 
@@ -1302,7 +1318,7 @@ class BicAn:
         for k in range(3):
             self.AxHands[k].clear()
         
-        self.PlotBispec(fig,self.AxHands[0])
+        self.PlotBispec(fig,self.AxHands[0],normb2=self.NormBic)
 
         self.PlotSpectro(fig,self.AxHands[1],vLim=self.SpecVLim)
         if self.PlotSlice is not None:
@@ -1332,6 +1348,10 @@ class BicAn:
         ax1 = plt.subplot(121)
         ax2 = plt.subplot(222)
         ax3 = plt.subplot(224)
+
+        # ax1 = plt.subplot(211)
+        # ax2 = plt.subplot(223)
+        # ax3 = plt.subplot(224)
 
         # Save figure and axes with object
         self.Figure = fig
@@ -1383,13 +1403,18 @@ class BicAn:
             print(Ix,Iy)
             print('button=',event.button)
 
-            ax.plot(f[Ix],f[Iy],'x',color='white')
+            ax.plot(f[Ix],f[Iy],'o',linestyle='none',color='white',markerfacecolor='none')
+
+            ###self.AxHands[1].plot(f[Ix],f[Iy],'-.',color='red')
+            # Plot lines on PSD
+            #for k in [Ix,Iy,Ix+Iy]:
+            #    self.AxHands[2].plot([f[k],f[k]],self.AxHands[2].get_ylim,'-.',color='red')
 
             # 1 = MouseButton.LEFT
             # 3 = MouseButton.RIGHT
             if event.button==1:
                 self.PlotPointOut([Ix],[Iy])
-            if event.button==3:
+            elif event.button==3:
                 self.PlotPointOut([Ix],[Iy],PlotAll=True)
 
         elif ax == self.AxHands[1]: # Check spectrogram
@@ -1541,6 +1566,7 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
         cbar.ax.tick_params(labelsize=3*fsize//4)
 
+        ###labels += ax.get_zticklabels()
         labels += cbar.ax.get_xticklabels()
         labels += cbar.ax.get_yticklabels()
 
@@ -1788,7 +1814,7 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
     return spec,afft,freq_vec,time_vec,err,Ntoss
 
 
-def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0):
+def ApplyCWT(sig,samprate=1,sigma,limFreq=2,alphExp=0):
 # ------------------
 # Wavelet static method
 # ------------------
@@ -1829,7 +1855,7 @@ def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0):
     return CWT,acwt,freq_vec[0:lim],time_vec
 
 
-def SpecToCoherence(spec,lilguy):
+def SpecToCoherence(spec,lilguy=1e-6):
 # ------------------
 # Cross-spectrum, cross-coherence, coherogram
 # ------------------
@@ -1847,7 +1873,7 @@ def SpecToCoherence(spec,lilguy):
     return C,cc,xx
 
 
-def SpecToBispec(spec,v,lilguy):
+def SpecToBispec(spec,v=[0,0,0],lilguy=1e-6):
 # ------------------
 # Turns spectrogram to b^2
 # ------------------
@@ -1867,7 +1893,7 @@ def SpecToBispec(spec,v,lilguy):
             p2 = spec[j,:,v[1]]
             s  = spec[j+k,:,v[2]]
 
-            Bi  = p1*p2*np.conj(s)
+            Bi  = p1 * p2 * np.conj(s)
             e12 = abs(p1*p2)**2
             e3  = abs(s)**2
 
@@ -1883,7 +1909,7 @@ def SpecToBispec(spec,v,lilguy):
     return b2,B              
 
 
-def SpecToCrossBispec(spec,v,lilguy):
+def SpecToCrossBispec(spec,v=[0,0,0],lilguy=1e-6):
 # ------------------
 # Turns 2 or 3 spectrograms to b^2
 # ------------------
@@ -1908,8 +1934,8 @@ def SpecToCrossBispec(spec,v,lilguy):
                 p2 = np.real( spec[abs(j),:,v[1]] )   + 1j*np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
                 s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
 
-                Bi  = p1*p2*np.conj(s)
-                e12 = abs(p1*p2)**2   
+                Bi  = p1 * p2 * np.conj(s)
+                e12 = abs( p1 * p2 )**2   
                 e3  = abs(s)**2  
 
                 Bjk = sum(Bi)                    
@@ -1925,7 +1951,7 @@ def SpecToCrossBispec(spec,v,lilguy):
     return b2,B
 
 
-def SpecToTrispec(spec,v,lilguy):
+def SpecToTrispec(spec,v=[0,0,0],lilguy=1e-6):
 # ------------------
 # Turns spectrogram to t^2
 # ------------------
@@ -1973,7 +1999,7 @@ def SpecToTrispec(spec,v,lilguy):
     return t2,T              
 
 
-def GetBispec(spec,v,lilguy,j,k,rando):
+def GetBispec(spec,v=[0,0,0],lilguy=1e-6,j=0,k=0,rando=False):
 # ------------------
 # Calculates the bicoherence of a single (f1,f2) value
 # ------------------
@@ -2005,7 +2031,7 @@ def GetBispec(spec,v,lilguy,j,k,rando):
     return w,B,Bi 
 
 
-def GetPolySpec(spec,f,lilguy,rando=False):
+def GetPolySpec(spec,f,lilguy=1e-6,rando=False):
 # ------------------
 # Calculates the nth-order coherence of a given (f1,f2,...,fn) value
 # ------------------
