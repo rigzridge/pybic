@@ -61,8 +61,11 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 9/03/2023 -> Fixed issue with Tkinter dialog in Colab notebook; all main
+# plot functions now use PlotDPI as dpi of figure
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/28/2023 -> Support for 'femto-', 'pico-', 'hecto-', 'peta-', and 'exa-' 
-# now included; added ...
+# now included; finally changed fS output of TestSignal() to float()
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/24/2023 -> Added a few helpful defaults in SpecTo...(), ...Spec() fxns,
 # in particular, SpecVLim = [] (auto), and NormBic = False (auto)
@@ -875,7 +878,7 @@ class BicAn:
     # Plot power spectrum
     # ------------------
         if len(args)==0:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(dpi=self.PlotDPI)
         else:
             fig = args[0]
             ax  = args[1]
@@ -904,7 +907,7 @@ class BicAn:
     # Plot spectrograms
     # ------------------
         if len(args)==0:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(dpi=self.PlotDPI)
             cax = None
         else:
             fig = args[0]
@@ -940,7 +943,7 @@ class BicAn:
     # Plot bispectrum
     # ------------------
         if len(args)==0:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(dpi=self.PlotDPI)
             cax = None
         else:
             fig = args[0]
