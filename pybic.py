@@ -61,11 +61,14 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 8/24/2023 -> Added a few helpful defaults in SpecTo...(), ...Spec() fxns
+# 8/28/2023 -> Support for 'femto-', 'pico-', 'hecto-', 'peta-', and 'exa-' 
+# now included; added ...
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 8/24/2023 -> Added a few helpful defaults in SpecTo...(), ...Spec() fxns,
+# in particular, SpecVLim = [] (auto), and NormBic = False (auto)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/19/2023 -> Smoothed out edges in PlotPointOut() so that legends actually
-# appear [switched single plt.legend() call with four ax<#>.legend() calls],
-# 
+# appear [switched single plt.legend() call with four ax<#>.legend() calls]
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/18/2023 -> Fixed issue with plotting local (inst.) b^2 instead of local  
 # bispectrum when PlotType~='bicoh' and BicOfTime=True, required additions to
@@ -413,7 +416,7 @@ class BicAn:
                 elif attr=='SpecType':
                     opts = ['fft','stft','fourier','wave','wavelet','cwt']
                 elif attr in ['TScale','FScale']:
-                    opts = [-9,-6,-3,-2,-1,0,3,6,9,12]
+                    opts = [-15,-12,-9,-6,-3,-2,-1,0,2,3,6,9,12,15,18]
 
                 if val not in opts:
                     print('***WARNING*** :: Invalid input! "%s" does not correspond to an option.' % val)
@@ -491,12 +494,18 @@ class BicAn:
                 elif instr in siglist:
                     # If explicit test signal (or demo), confirm with user, then recursively call ParseInputs
                     instr = 'circle' if instr == 'demo' else instr
-                    root = tk.Tk()
-                    root.withdraw()
-                    if messagebox.askokcancel('Question','Run the "{}" demo?'.format(instr), master=root):
+                    try:
+                        # Added for Colab notebooks, etc. No need for prompt there!
+                        root = tk.Tk()
+                        root.withdraw()
+                        if messagebox.askokcancel('Question','Run the "{}" demo?'.format(instr), master=root):
+                            sig,_,fS = TestSignal(instr)
+                            self.ParseInput(sig,{'SampRate':fS})  
+                        root.destroy()
+                    except:
                         sig,_,fS = TestSignal(instr)
-                        self.ParseInput(sig,{'SampRate':float(fS)})  
-                    root.destroy()
+                        self.ParseInput(sig,{'SampRate':fS})
+
                 else:
                     print('Hmmm. That string isn`t supported yet... Try "demo".') 
                     print(siglist)  
@@ -622,13 +631,12 @@ class BicAn:
         ##################
         end = time.time()
 
-        buf = 'Complete! Process required %.5f s.' % (end-start)
-        print(buf)
+        print('Complete! Process required %.5f s.' % (end-start))
 
         if self.Verbose:
             print(self)      
 
-        if self.PlotIt:       
+        if self.PlotIt and not self.JustSpec:      
             self.PlotGUI()
 
 
@@ -1679,6 +1687,15 @@ def TestSignal(whatsig):
         x4,_,_ = SignalGen(fS,tend,fx=15+25+45,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x1 + x2 + x3 + x4 + nz
+
+    elif dum == 'ntone':
+        # ask how many
+
+        # get n freqs
+
+        # 
+        print('Not an option yet!!!')
+
     elif dum == 'line':
         inData,t,_ = SignalGen(fS,tend,fx=f1,Ay=1,fy=f2,Afy=10,Az=1,Ff=1/20)
     elif dum in ['circle','circle_oversample']:
@@ -1759,7 +1776,7 @@ def TestSignal(whatsig):
     else:
         print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(whatsig)) 
         inData,t,fS = SignalGen(fS,tend,1,22,0,0,0,0,0,0,0)
-    return inData,t,fS
+    return inData,t,float(fS)
 
 
 def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,errlim=1e15):
@@ -1814,7 +1831,7 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
     return spec,afft,freq_vec,time_vec,err,Ntoss
 
 
-def ApplyCWT(sig,samprate=1,sigma,limFreq=2,alphExp=0):
+def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0):
 # ------------------
 # Wavelet static method
 # ------------------
@@ -2090,8 +2107,8 @@ def ScaleToString(scale):
 # ------------------
 # Time/freq scaling
 # ------------------
-    tags = ['n',[],[],'$\mu$',[],[],'m','c','d','', [],[],'k',[],[],'M',[],[],'G',[],[],'T']
-    s = tags[9+scale]
+    tags = ['f',[],[],'p',[],[],'n',[],[],'$\mu$',[],[],'m','c','d','', [],'h','k',[],[],'M',[],[],'G',[],[],'T',[],[],'P',[],[],'E']
+    s = tags[15+scale]
     return s   
 
 
