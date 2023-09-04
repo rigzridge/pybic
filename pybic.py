@@ -62,7 +62,9 @@
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/03/2023 -> Fixed issue with Tkinter dialog in Colab notebook; all main
-# plot functions now use PlotDPI as dpi of figure
+# plot functions now use PlotDPI as dpi of figure; ClickPlot() draws lines
+# on spectrogram and power spectrum, indicating selections in frequency;
+# noise floor [see vanMilligen PRL (1995)] now plotted in 'b2Prob' 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/28/2023 -> Support for 'femto-', 'pico-', 'hecto-', 'peta-', and 'exa-' 
 # now included; finally changed fS output of TestSignal() to float()
@@ -1187,21 +1189,21 @@ class BicAn:
             # More accurate distribution... Just more complicated! (Get to it later...)
             #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
             b2dist = (1/m)*np.exp(-b2vec/m)
-            ax.plot(b2vec, b2dist, linewidth=self.LineWidth, color='red', label=r'$(1/\mu)e^{-b^2/\mu}$')
+            ax.plot(b2vec, b2dist, linewidth=self.LineWidth, color=self.LineColor[90], label=r'$(1/\mu)e^{-b^2/\mu}$')
 
             b2crit = -m*np.log(1 - cVal)
             b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
+            b2noise = ( self.SampRate / min(abs(self.fv[X[0]]), abs(self.fv[Y[0]]), abs(self.fv[X[0]+Y[0]])) / (2*len(self.tv)) )**0.5
             yrange = [0, b2dist[0]]
             #yrange = [1e-3, b2dist[0]*10]
-            ax.plot([b2crit,b2crit], yrange, label=r'$99.9\%$ CI')
-            ax.plot([b2true,b2true], yrange, label='Measured')
+            ax.plot([b2crit,b2crit], yrange, label=r'$99.9\%$ CI', linewidth=self.LineWidth)
+            ax.plot([b2true,b2true], yrange, label='Measured', linewidth=self.LineWidth)
+            ax.plot([b2noise,b2noise], yrange, label='Noise floor', linewidth=self.LineWidth)
 
             PlotLabels(fig,ax,['$b^2$' + pntstr[0],r'$\mathrm{PDF}$'], self.FontSize, self.CbarNorth)
 
             ax.set_xlim(0,1)
             ax.set_ylim(yrange[0],yrange[1])
-            ax.grid(visible=True,which='minor',linewidth=0.5,color=[0.9,0.9,0.9])
-            ax.grid(visible=True,which='major')
 
         elif whatPlot=='BvsTime':
 
@@ -1226,8 +1228,6 @@ class BicAn:
                     ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
 
             ax.set_xlim([dumt[0],dumt[-1]])
-            ax.grid(visible=True,which='minor',linewidth=0.5,color=[0.9,0.9,0.9])  
-            ax.grid(visible=True,which='major')
 
 
             _,ystr = self.WhichPlot(local=self.bs)
@@ -1247,8 +1247,6 @@ class BicAn:
             ###ax.plot(np.real(Bi),np.imag(Bi),'o',label=pntstr)
             ax.set_xlim(-1,1)
             ax.set_ylim(-1,1)
-            ax.grid(visible=True,which='minor',linewidth=0.5,color=[0.9,0.9,0.9])
-            ax.grid(visible=True,which='major')
 
             reStr = r'$\mathcal{R}e(\widetilde{\mathcal{B}})/|\widetilde{\mathcal{B}}|_\mathrm{max}$'
             imStr = r'$\mathcal{I}m(\widetilde{\mathcal{B}})/|\widetilde{\mathcal{B}}|_\mathrm{max}$'
@@ -1278,11 +1276,11 @@ class BicAn:
             ax3 = plt.subplot(223)
             ax4 = plt.subplot(224)
 
-            print('input is...',X,Y)
+            # print('input is...',X,Y)
             self.PlotHelper('b2Prob',fig=fig,ax=ax1,X=X,Y=Y,IsFreq=IsFreq,CheckNeighbors=CheckNeighbors)
 
             # For some reason this changes X and Y???
-            print('but now is...',X,Y)
+            # print('but now is...',X,Y)
 
             self.PlotHelper('Phasor',fig=fig,ax=ax3,X=X,Y=Y,CheckNeighbors=CheckNeighbors)
 
@@ -1337,10 +1335,10 @@ class BicAn:
 
             t  = self.tv/10**self.TScale
             f  = self.fv/10**self.FScale
-            dt = self.SubInt/self.SampRate/10**self.TScale
+            dt = (self.SubInt/self.SampRate)/10**self.TScale
 
-            self.AxHands[1].plot([t[It], t[It]],      [0, f[-1]], color='white', linewidth=2)
-            self.AxHands[1].plot([t[It]+dt, t[It]+dt],[0, f[-1]], color='white', linewidth=2)
+            self.AxHands[1].plot([t[It], t[It]],      [0, f[-1]], color='white', linewidth=1.5)
+            self.AxHands[1].plot([t[It]+dt, t[It]+dt],[0, f[-1]], color='white', linewidth=1.5)
 
         self.PlotPowerSpec(fig,self.AxHands[2])       
 
@@ -1417,9 +1415,15 @@ class BicAn:
             ax.plot(f[Ix],f[Iy],'o',linestyle='none',color='white',markerfacecolor='none')
 
             ###self.AxHands[1].plot(f[Ix],f[Iy],'-.',color='red')
-            # Plot lines on PSD
-            #for k in [Ix,Iy,Ix+Iy]:
-            #    self.AxHands[2].plot([f[k],f[k]],self.AxHands[2].get_ylim,'-.',color='red')
+
+            # Plot lines on spectrogram andPSD
+            xlim = self.AxHands[1].get_xlim()
+            ylim = self.AxHands[2].get_ylim()
+            for k in [Ix,Iy,Ix+Iy]:
+                self.AxHands[1].plot(xlim,[f[k],f[k]],'-',color='red')
+                self.AxHands[2].plot([f[k],f[k]],ylim,'-',color='red')
+            self.AxHands[1].set_xlim(xlim)
+            self.AxHands[2].set_ylim(ylim)
 
             # 1 = MouseButton.LEFT
             # 3 = MouseButton.RIGHT
