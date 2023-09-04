@@ -59,7 +59,11 @@
 # window    -> select window function                 x[default :: 'hann']
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-# Version History
+# Version History 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 9/04/2023 -> Found out about ax.axhline and ax.axvline methods, swapped 
+# out a few instances of ax.plot(...); usingax.axvspan() to show uncertainty 
+# in measured value for 'b2Prob' plots
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/03/2023 -> Fixed issue with Tkinter dialog in Colab notebook; all main
 # plot functions now use PlotDPI as dpi of figure; ClickPlot() draws lines
@@ -70,7 +74,7 @@
 # 8/28/2023 -> Support for 'femto-', 'pico-', 'hecto-', 'peta-', and 'exa-' 
 # now included; finally changed fS output of TestSignal() to float()
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 8/24/2023 -> Added a few helpful defaults in SpecTo...(), ...Spec() fxns,
+# 8/24/2023 -> Added a few helpful defaults in SpecTo...(), ...Spec() methods,
 # in particular, SpecVLim = [] (auto), and NormBic = False (auto)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/19/2023 -> Smoothed out edges in PlotPointOut() so that legends actually
@@ -924,11 +928,12 @@ class BicAn:
         t = self.tv/10**self.TScale
         f = self.fv/10**self.FScale
 
-        if not len(vLim)==2:
-            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig]) + 0*1e-16), cmap=self.CMap, shading='auto')
-        else:
+        if len(vLim)==2:
             im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig]) + 0*1e-16), cmap=self.CMap, shading='auto', vmin=vLim[0], vmax=vLim[1])
+        else:
+            im = ax.pcolormesh(t,f,2*np.log10(abs(self.sg[:,:,self.PlotSig]) + 0*1e-16), cmap=self.CMap, shading='auto')
 
+        # cax = PlotLabels(fig,ax,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,im,cax,cbarweight='ticks')
         cax = PlotLabels(fig,ax,[tstr,fstr,cbarstr],self.FontSize,self.CbarNorth,im,cax)
         if self.NewGUICax:
             self.CaxHands[1] = cax
@@ -1186,22 +1191,29 @@ class BicAn:
             intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
             # exp dist -> (1/m)exp(-x/m)
             m = np.mean(g)
-            ax.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, marker='x', linestyle='none', label='randomized')
+            ax.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, color=self.LineColor[50], marker='x', linestyle='none', label='randomized')
             # More accurate distribution... Just more complicated! (Get to it later...)
             #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
             b2dist = (1/m)*np.exp(-b2vec/m)
-            ax.plot(b2vec, b2dist, linewidth=self.LineWidth, color=self.LineColor[50], label=r'$(1/\mu)e^{-b^2/\mu}$')
+            ax.plot(b2vec, b2dist, linewidth=self.LineWidth, label=r'$(1/\mu)e^{-b^2/\mu}$')
 
+            N = len(self.tv)
             b2crit = -m*np.log(1 - cVal)
             b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
-            b2noisebase = 10 if self.SpecType=='stft' else self.SampRate / min( abs(self.fv[X[0]]), abs(self.fv[Y[0]]), abs(self.fv[X[0]+Y[0]]) )
-            ##b2noisebase = 4*b2true / (1-b2true)**3 ##<- This is from ElgarSebert (1989), 10 is Fackrell, ElgarGuza (1988)
-            b2noise = ( b2noisebase / (2*len(self.tv)) )**0.5
+            b2noisebase = 10 if self.SpecType=='stft' else self.SampRate / min( abs(self.fv[X[0]]), abs(self.fv[Y[0]]), abs(self.fv[X[0]+Y[0]]) ) # vanMilligen PoP (1995)
+            ##b2noisebase = 4*b2true / (1-b2true)**3 ##<- This is from ElgarSebert (1989), 10 is Fackrell (1995), ElgarGuza (1988)
+            b2noise = ( b2noisebase / (2*N) )**0.5
+
+            print(b2noisebase)
+
+            errb2 = N**(-0.5)
+            ax.axvspan(b2true-errb2, b2true+errb2, facecolor='C2', alpha=0.2)
+
             yrange = [0, b2dist[0]]
             #yrange = [1e-3, b2dist[0]*10]
-            ax.plot([b2crit,b2crit], yrange, label=r'$99.9\%$ CI', linewidth=self.LineWidth)
-            ax.plot([b2true,b2true], yrange, label='Measured', linewidth=self.LineWidth)
-            ax.plot([b2noise,b2noise], yrange, label='Noise floor', linewidth=self.LineWidth)
+            ax.axvline(b2crit, linewidth=self.LineWidth, color='C1', label=r'$99.9\%$ CI',)
+            ax.axvline(b2true, linewidth=self.LineWidth, color='C2', label='Measured',)
+            ax.axvline(b2noise, linewidth=self.LineWidth, color='C3', label='Noise floor',)
 
             PlotLabels(fig,ax,['$b^2$' + pntstr[0],r'$\mathrm{PDF}$'], self.FontSize, self.CbarNorth)
 
@@ -1247,6 +1259,7 @@ class BicAn:
             t = self.tv/10**self.TScale
             tstr = r'$t\, [\mathrm{%ss}]$' % ScaleToString(self.TScale)
             PlotTimeline(np.real(Bi),np.imag(Bi),t=t,fig=fig,ax=ax,lw=self.LineWidth,cmap='twilight',cbar=tstr)
+            ##PlotTimeline(np.real(Bi),np.imag(Bi),t=t,fig=fig,ax=ax,lw=self.LineWidth,cmap=self.CMap,cbar=tstr)
             ###ax.plot(np.real(Bi),np.imag(Bi),'o',label=pntstr)
             ax.set_xlim(-1,1)
             ax.set_ylim(-1,1)
@@ -1300,6 +1313,9 @@ class BicAn:
             #ax3.legend()
             ax4.legend(fontsize=2*self.FontSize//3,loc='upper center',bbox_to_anchor=(0.35, 1.5),ncol=2)
 
+            # figSpace = 0.1
+            # fig.subplots_adjust(hspace=figSpace,wspace=figSpace)
+
             plt.tight_layout()
             if SaveAs is None:
                 plt.show()
@@ -1340,8 +1356,8 @@ class BicAn:
             f  = self.fv/10**self.FScale
             dt = (self.SubInt/self.SampRate)/10**self.TScale
 
-            self.AxHands[1].plot([t[It], t[It]],      [0, f[-1]], color='white', linewidth=1.5)
-            self.AxHands[1].plot([t[It]+dt, t[It]+dt],[0, f[-1]], color='white', linewidth=1.5)
+            self.AxHands[1].axvline(t[It], color='white', linewidth=1.5)
+            self.AxHands[1].axvline(t[It]+dt, color='white', linewidth=1.5)
 
         self.PlotPowerSpec(fig,self.AxHands[2])       
 
@@ -1419,14 +1435,11 @@ class BicAn:
 
             ###self.AxHands[1].plot(f[Ix],f[Iy],'-.',color='red')
 
-            # Plot lines on spectrogram andPSD
-            xlim = self.AxHands[1].get_xlim()
-            ylim = self.AxHands[2].get_ylim()
-            for k in [Ix,Iy,Ix+Iy]:
-                self.AxHands[1].plot(xlim,[f[k],f[k]],'-',color='red')
-                self.AxHands[2].plot([f[k],f[k]],ylim,'-',color='red')
-            self.AxHands[1].set_xlim(xlim)
-            self.AxHands[2].set_ylim(ylim)
+            if self._Nseries==1:
+                # Plot lines on spectrogram and PSD
+                for k in [Ix,Iy,Ix+Iy]:
+                    self.AxHands[1].axhline(f[k], color='red', linewidth=1.5)
+                    self.AxHands[2].axvline(f[k], color='red', linewidth=1.5)
 
             # 1 = MouseButton.LEFT
             # 3 = MouseButton.RIGHT
@@ -1575,22 +1588,6 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
     ax.set_xlabel(strings[0], fontsize=fsize, fontweight=fweight)
     if n>1:
         ax.set_ylabel(strings[1], fontsize=fsize, fontweight=fweight)
-    if n==4: # Must be trispectrum
-
-        ax.zaxis.set_rotate_label(False)  # disable automatic rotation
-        ax.set_zlabel(strings[2], fontsize=fsize, fontweight=fweight, rotation=90)
-        cbar = fig.colorbar(im,cax=None,ax=ax,shrink=0.75,label=strings[3])
-
-        cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
-        cbar.ax.tick_params(labelsize=3*fsize//4)
-
-        ###labels += ax.get_zticklabels()
-        labels += cbar.ax.get_xticklabels()
-        labels += cbar.ax.get_yticklabels()
-
-    ax.tick_params(labelsize=9*fsize//10)
-    ax.minorticks_on()
-
     if n==3:
         if cax is None:
             divider = make_axes_locatable(ax)
@@ -1610,6 +1607,21 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         if cbarweight=='ticks':
             labels += cax.get_xticklabels()
             labels += cax.get_yticklabels()
+    if n==4: # Must be trispectrum
+
+        ax.zaxis.set_rotate_label(False)  # disable automatic rotation
+        ax.set_zlabel(strings[2], fontsize=fsize, fontweight=fweight, rotation=90)
+        cbar = fig.colorbar(im,cax=None,ax=ax,shrink=0.75,label=strings[3])
+
+        cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
+        cbar.ax.tick_params(labelsize=3*fsize//4)
+
+        ###labels += ax.get_zticklabels()
+        labels += cbar.ax.get_xticklabels()
+        labels += cbar.ax.get_yticklabels()
+
+    ax.tick_params(labelsize=9*fsize//10)
+    ax.minorticks_on()
 
     #cid = fig.canvas.mpl_connect('button_press_event', GetClick)
 
