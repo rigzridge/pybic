@@ -64,7 +64,8 @@
 # 9/03/2023 -> Fixed issue with Tkinter dialog in Colab notebook; all main
 # plot functions now use PlotDPI as dpi of figure; ClickPlot() draws lines
 # on spectrogram and power spectrum, indicating selections in frequency;
-# noise floor [see vanMilligen PRL (1995)] now plotted in 'b2Prob' 
+# noise floor [see vanMilligen PRL (1995)] now plotted in 'b2Prob' for CWT, 
+# alternate expression [see ElgarGuza IEEE (1988)] used for STFT
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/28/2023 -> Support for 'femto-', 'pico-', 'hecto-', 'peta-', and 'exa-' 
 # now included; finally changed fS output of TestSignal() to float()
@@ -1189,11 +1190,13 @@ class BicAn:
             # More accurate distribution... Just more complicated! (Get to it later...)
             #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
             b2dist = (1/m)*np.exp(-b2vec/m)
-            ax.plot(b2vec, b2dist, linewidth=self.LineWidth, color=self.LineColor[90], label=r'$(1/\mu)e^{-b^2/\mu}$')
+            ax.plot(b2vec, b2dist, linewidth=self.LineWidth, color=self.LineColor[50], label=r'$(1/\mu)e^{-b^2/\mu}$')
 
             b2crit = -m*np.log(1 - cVal)
             b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
-            b2noise = ( self.SampRate / min(abs(self.fv[X[0]]), abs(self.fv[Y[0]]), abs(self.fv[X[0]+Y[0]])) / (2*len(self.tv)) )**0.5
+            b2noisebase = 10 if self.SpecType=='stft' else self.SampRate / min( abs(self.fv[X[0]]), abs(self.fv[Y[0]]), abs(self.fv[X[0]+Y[0]]) )
+            ##b2noisebase = 4*b2true / (1-b2true)**3 ##<- This is from ElgarSebert (1989), 10 is Fackrell, ElgarGuza (1988)
+            b2noise = ( b2noisebase / (2*len(self.tv)) )**0.5
             yrange = [0, b2dist[0]]
             #yrange = [1e-3, b2dist[0]*10]
             ax.plot([b2crit,b2crit], yrange, label=r'$99.9\%$ CI', linewidth=self.LineWidth)
