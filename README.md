@@ -1,5 +1,5 @@
-# pybic
-Python-based bicoherence analysis
+# PyBic
+This module implements _BicAn_ in Python
 
 ## The bispectrum
 $\mathcal{B}_{xyz}(f_1,f_2) = \langle X(f_1)Y(f_2)Z^*(f_1+f_2) \rangle$, where $x$, $y$, $z$ are time series with 
