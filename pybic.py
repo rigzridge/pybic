@@ -61,9 +61,12 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 9/10/2023 -> Now using ax.fill_between() to plot uncertainty in biphase
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/04/2023 -> Found out about ax.axhline and ax.axvline methods, swapped 
-# out a few instances of ax.plot(...); usingax.axvspan() to show uncertainty 
-# in measured value for 'b2Prob' plots
+# out a few instances of ax.plot(...); using ax.axvspan() to show uncertainty 
+# in measured value for 'b2Prob' plots; GetPolySpec() now accepts cross with
+# v=[0,0,1,...] input; line coloring error fixed [50+40*k] -> [(50+40*k) % 256]
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/03/2023 -> Fixed issue with Tkinter dialog in Colab notebook; all main
 # plot functions now use PlotDPI as dpi of figure; ClickPlot() draws lines
@@ -273,22 +276,14 @@
 # Import dependencies
 import os
 import time
-import warnings
+# import warnings
 import numpy as np
+from matplotlib import cm
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider, Button, RadioButtons
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
-from math import isclose
 import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
-
-# Extra, definitely-not-bug-tested stuff
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
-from matplotlib import cm
-from tkinter import *
-#import pandas as pd
 
 # Computer modern font (LaTeX default)
 plt.rcParams['mathtext.fontset'] = 'cm'
@@ -374,7 +369,7 @@ class BicAn:
 
     cs = []   # Cross-spectrum
     cc = []   # Cross-coherence
-    sg = []   # Coherence spectrum
+    cg = []   # Coherence spectrum
 
     bs = []   # Bispectrum
     bc = []   # Bicoherence spectrum
@@ -489,7 +484,8 @@ class BicAn:
                 #### Should this be global?
                 siglist = ['demo','classic','tone','noisy','2tone','3tone','4tone',
                             'line','circle','fast_circle','quad_couple','d3dtest','cube_couple',
-                            'coherence','cross_2tone','cross_3tone','cross_circle','amtest',
+                            'coherence','cross_2tone','cross_3tone','cross_circle','amtest','quad_couple_circle',
+                            'quad_couple_circle2',
                             '3tone_short','circle_oversample','cross_3tone_short','helix']
                 if instr == 'input':
                     # Start getfile prompt
@@ -866,8 +862,8 @@ class BicAn:
                     if bestCoh==bestCoh_old:
                         searchNeighbors = False
 
-            if bestCoh>critCoh:
-                break
+                    if bestCoh>critCoh:
+                        break
 
         if (N==2 or N==3) and plot:
             plt.show()
@@ -894,7 +890,7 @@ class BicAn:
         dum = self.ft if self.PlotSlice is None else abs(self.sg[:,self.PlotSlice,:])**2
 
         for k in range(self._Nseries):
-            ax.semilogy(f, dum[:,k], linewidth=self.LineWidth, color=self.LineColor[50+40*k])
+            ax.semilogy(f, dum[:,k], linewidth=self.LineWidth, color=self.LineColor[(50+40*k) % 256])
 
         fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         ystr = r'$\langle|%s(f)|^2\rangle\,\mathrm{[arb.]}$' % ('X' if self.SpecType=='stft' else r'\mathcal{W}')
@@ -1198,15 +1194,20 @@ class BicAn:
             ax.plot(b2vec, b2dist, linewidth=self.LineWidth, label=r'$(1/\mu)e^{-b^2/\mu}$')
 
             N = len(self.tv)
+            # Maybe I misunderstand things?
+            # chi2dist = np.exp(-b2vec/N) / 2
+            # ax.plot(b2vec, chi2dist, linewidth=self.LineWidth, label=r'$(1/2N)\chi^2_2$')
+            print('nu = ',2 * m**2/np.var(g))
+
             b2crit = -m*np.log(1 - cVal)
             b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
+            
             b2noisebase = 10 if self.SpecType=='stft' else self.SampRate / min( abs(self.fv[X[0]]), abs(self.fv[Y[0]]), abs(self.fv[X[0]+Y[0]]) ) # vanMilligen PoP (1995)
-            ##b2noisebase = 4*b2true / (1-b2true)**3 ##<- This is from ElgarSebert (1989), 10 is Fackrell (1995), ElgarGuza (1988)
+            ###b2noisebase = 4*b2true / (1-b2true)**3 ##<- This is from ElgarSebert (1989), 10 is Fackrell (1995), ElgarGuza (1988)
             b2noise = ( b2noisebase / (2*N) )**0.5
-
-            print(b2noisebase)
-
             errb2 = N**(-0.5)
+            # b2noise = b2noisebase / (2*N)
+            # errb2 = 1/N
             ax.axvspan(b2true-errb2, b2true+errb2, facecolor='C2', alpha=0.2)
 
             yrange = [0, b2dist[0]]
@@ -1226,7 +1227,7 @@ class BicAn:
             for k in range(len(X)):
 
                 # Calculate "point-out"
-                _,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
+                b2est,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[k],X[k],False)
                 if Bi is None:
                     print('No bispectral data?')
                     #return
@@ -1234,13 +1235,21 @@ class BicAn:
                 if self.PlotType in ['abs','imag','real']:
                     umm = eval('np.{}(Bi)'.format(self.PlotType))
                     if self.PlotType == 'abs':
-                        ax.semilogy(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
+                        ax.semilogy(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[(50+40*k) % 256])
                         ###PlotTimeline(dumt,umm,ax=ax,lw=self.LineWidth,cmap='turbo',cbar=False)
                     else:
-                        ax.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
+                        ax.plot(dumt,umm, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[(50+40*k) % 256])
                 elif self.PlotType == 'angle':
-                    #ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', markersize=1, label=pntstr[k], color=self.LineColor[50+40*k])
-                    ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[50+40*k])
+                    Bi_unwrap = np.unwrap(np.angle(Bi))
+
+                    #ax.plot(dumt,np.unwrap(np.angle(Bi))/np.pi, linewidth=self.LineWidth, linestyle='-.', marker='x', markersize=1, label=pntstr[k], color=self.LineColor[(50+40*k) % 256])
+                    ax.plot(dumt,Bi_unwrap/np.pi, linewidth=self.LineWidth, label=pntstr[k], color=self.LineColor[(50+40*k) % 256])
+
+                    N = len(Bi)
+                    # Uncertainty as given in Fackrell
+                    beta_hi = Bi_unwrap + np.sqrt( (1/b2est - 1) / N )
+                    beta_lo = Bi_unwrap - np.sqrt( (1/b2est - 1) / N )
+                    ax.fill_between(dumt,beta_hi/np.pi, beta_lo/np.pi, color=self.LineColor[(50+40*k) % 256], alpha=0.2)
 
             ax.set_xlim([dumt[0],dumt[-1]])
 
@@ -1781,6 +1790,18 @@ def TestSignal(whatsig):
         inData[:,0] = x 
         inData[:,1] = y 
         inData[:,2] = z
+    elif dum == 'quad_couple_circle':
+        x,t,_  = SignalGen(fS,tend,fx=f1,Afx=10,Ff=1/20)
+        y,_,_  = SignalGen(fS,tend,Ax=0,fx=0,Ay=1,fy=f2,Afy=10,Ff=1/20)
+        z,_,_  = SignalGen(fS,tend,Ax=0,fx=f1,Afx=10,Ay=0,fy=f2,Afy=10,Az=1,Ff=1/20)
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
+        inData = x + y + x * y + nz
+    elif dum == 'quad_couple_circle2':
+        x,t,_  = SignalGen(fS,tend,fx=f1,Afx=10,Ff=1/20)
+        y,_,_  = SignalGen(fS,tend,Ax=0,fx=0,Ay=1,fy=f2,Afy=10,Ff=1/20)
+        z,_,_  = SignalGen(fS,tend,Ax=0,fx=f1,Afx=10,Ay=0,fy=f2,Afy=10,Az=1,Ff=1/20)
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
+        inData = x + y + x * y + nz
     elif dum == 'cross_circle':
         x,t,_  = SignalGen(fS,tend,fx=f1,Afx=10,Ff=1/20)
         y,_,_  = SignalGen(fS,tend,Ax=0,fx=0,Ay=1,fy=f2,Afy=10,Ff=1/20)
@@ -1853,7 +1874,7 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
     return spec,afft,freq_vec,time_vec,err,Ntoss
 
 
-def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0):
+def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0.5):
 # ------------------
 # Wavelet static method
 # ------------------
@@ -1869,7 +1890,7 @@ def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0):
     CWT  = np.zeros((lim,nyq,N),dtype=complex)
 
     # Morlet wavelet in frequency space
-    Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a**0) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
+    Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a**(alphExp-0.5)) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
 
     for k in range(N):
         fft_sig = np.fft.fft(sig[:,k])
@@ -1882,7 +1903,7 @@ def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0):
         for a in range(lim-1):
             LoadBar(a,lim)
             # Apply for each scale (read: frequency)
-            dum = np.fft.ifft(fft_sig * Psi(a+1))                # Linear scale (f_a = a*f0)
+            dum = np.fft.ifft(fft_sig * Psi(a+1)) ###/ nyq          # Linear scale (f_a = a*f0)
             #dum = np.fft.ifft(fft_sig * Psi( 2**((a+1)/12) ))   # Equal-tempered
             #dum = np.fft.ifft(fft_sig * Psi( (a+1)/10 ) )
             CWT[a+1,:,k] = dum
@@ -2070,23 +2091,28 @@ def GetBispec(spec,v=[0,0,0],lilguy=1e-6,j=0,k=0,rando=False):
     return w,B,Bi 
 
 
-def GetPolySpec(spec,f,lilguy=1e-6,rando=False):
+def GetPolySpec(spec,f,lilguy=1e-6,rando=False,v=[]):
 # ------------------
 # Calculates the nth-order coherence of a given (f1,f2,...,fn) value
 # ------------------
 
+    N = len(f)
     sumFreq = sum(f)
 
-    getCoeff = lambda i: np.real( spec[abs( i ),:,0] ) + 1j*np.sign( i )*np.imag( spec[abs( i ),:,0] )
+    if len(v)==0 or not len(v)==N+1:
+        # Default to all first time series if issue
+        v = (N+1) * [0]
 
-    s = np.conj( getCoeff(sumFreq) )
+    getCoeff = lambda i,n: np.real( spec[abs( i ),:,v[n]] ) + 1j*np.sign( i )*np.imag( spec[abs( i ),:,v[n]] )
+
+    s = np.conj( getCoeff(sumFreq,N) )
     if rando:
         s  = abs(s) * np.exp( 2j*np.pi* (2*np.random.random( s.shape  ) - 1) )
 
     nSpec_i = np.ones( s.shape , dtype=complex)
 
-    for k in range( len(f) ):
-        p = getCoeff( f[k] )
+    for k in range(N):
+        p = getCoeff( f[k], k )
 
         if rando:
             p = abs(p)*np.exp( 2j*np.pi* (2*np.random.random( p.shape ) - 1) )
