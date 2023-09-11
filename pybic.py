@@ -61,6 +61,9 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 9/11/2023 -> Fixed issue with MonteCarloMax()'s use of NFreq attribute;
+# shuffled around PlotPointOut() behavior when PlotType='hybrid'
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/10/2023 -> Now using ax.fill_between() to plot uncertainty in biphase
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/04/2023 -> Found out about ax.axhline and ax.axvline methods, swapped 
@@ -1133,7 +1136,7 @@ class BicAn:
         doShow = False
         if fig is None:
             doShow = True
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(dpi=self.PlotDPI)
 
         # Okay, so ClickPlot() sends in X and Y w/ based on:
         ## self.fv if _Nseries==1
@@ -1291,7 +1294,7 @@ class BicAn:
     # Plot value of b^2 over time
     # ------------------
 
-        if self.PlotType=='hybrid' or PlotAll: 
+        if PlotAll: 
 
             old_plotType = self.PlotType
 
@@ -1332,6 +1335,9 @@ class BicAn:
             else:
                 fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
                 plt.close(fig)
+
+        elif self.PlotType == 'hybrid':
+            self.PlotHelper('Phasor',X=X,Y=Y,IsFreq=IsFreq)
 
         elif self.PlotType == 'bicoh':
             self.PlotHelper('b2Prob',X=X,Y=Y,IsFreq=IsFreq)
