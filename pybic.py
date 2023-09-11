@@ -265,7 +265,8 @@
 # *_ Add buttons and callbacks from Matlab
 # ** Swap out "dum" variables for more literate ones
 # ** Comment the code!!!
-# ** Fix butt-ugly inputs to PlotPointOut children!
+# __ Fix butt-ugly inputs to PlotPointOut children!
+# ** Flag for base units (maybe not based in time, say)
 
 # Methods left:
 #{
@@ -802,7 +803,7 @@ class BicAn:
 
         bestCoh = 0
 
-        flim = self.NFreq//2
+        flim = self.NFreq 
 
         vals = np.zeros(N)
 
