@@ -1917,7 +1917,7 @@ def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0.5):
         for a in range(lim-1):
             LoadBar(a,lim)
             # Apply for each scale (read: frequency)
-            dum = np.fft.ifft(fft_sig * Psi(a+1)) / Nsig         # Linear scale (f_a = a*f0)
+            dum = np.fft.ifft(fft_sig * Psi(a+1)) ###/ Nsig         # Linear scale (f_a = a*f0)
             #dum = np.fft.ifft(fft_sig * Psi( 2**((a+1)/12) ))   # Equal-tempered
             #dum = np.fft.ifft(fft_sig * Psi( (a+1)/10 ) )
             CWT[a+1,:,k] = dum
