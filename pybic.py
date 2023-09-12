@@ -61,8 +61,11 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 9/12/2023 -> Changed alpha in scatter for PlotTrispec()
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/11/2023 -> Fixed issue with MonteCarloMax()'s use of NFreq attribute;
-# shuffled around PlotPointOut() behavior when PlotType='hybrid'
+# shuffled around PlotPointOut() behavior when PlotType='hybrid'; sort() now
+# automatically applied to output of nRandSumLessThanUnity()
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/10/2023 -> Now using ax.fill_between() to plot uncertainty in biphase
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -822,8 +825,6 @@ class BicAn:
         for k in range(Nrolls):
             
             freqs = ( nRandSumLessThanUnity(N) * flim ).astype(int)
-            freqs.sort()
-            freqs = freqs[::-1]
 
             nCoh,_,_ = GetPolySpec(self.sg, freqs, self.LilGuy)
 
@@ -1039,7 +1040,7 @@ class BicAn:
         #fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
         fig = plt.figure(dpi=self.PlotDPI)
         ax = fig.add_subplot(111, projection='3d')
-        im = ax.scatter(x[q],y[q],z[q],c=dum,cmap=self.CMap)
+        im = ax.scatter(x[q],y[q],z[q],c=dum,cmap=self.CMap,alpha=0.5)
 
         #isosurface(f(1:lim),f(1:lim2),f(1:lim3),bic.tc,Tval,angle(bic.ts))
 
@@ -1128,7 +1129,7 @@ class BicAn:
         self.PlotType = old_plot
 
 
-    def PlotHelper(self,whatPlot,X,Y,IsFreq=False,CheckNeighbors=False,fig=None,ax=None,Ntrials=200,b2bins=100,cVal=0.999):
+    def PlotHelper(self,whatPlot,X,Y,IsFreq=False,CheckNeighbors=False,fig=None,ax=None,Ntrials=200,b2bins=100,cVal=0.999,SaveAs=None):
     # ------------------
     # Estimate and plot distribution of b2 for single point
     # ------------------
@@ -1284,8 +1285,13 @@ class BicAn:
         plt.grid(True)
         if doShow:
             plt.tight_layout()
-            plt.legend()
-            plt.show()
+            if not whatPlot=='Phasor':
+                plt.legend()
+            if SaveAs is None:
+                plt.show()
+            else:
+                fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
+                plt.close(fig)
         return
 
 
@@ -1337,13 +1343,13 @@ class BicAn:
                 plt.close(fig)
 
         elif self.PlotType == 'hybrid':
-            self.PlotHelper('Phasor',X=X,Y=Y,IsFreq=IsFreq)
+            self.PlotHelper('Phasor',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs)
 
         elif self.PlotType == 'bicoh':
-            self.PlotHelper('b2Prob',X=X,Y=Y,IsFreq=IsFreq)
+            self.PlotHelper('b2Prob',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs)
 
         elif self.PlotType in ['abs','real','imag','angle']:
-            self.PlotHelper('BvsTime',X=X,Y=Y,IsFreq=IsFreq)
+            self.PlotHelper('BvsTime',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs)
 
         return X,Y
         
@@ -1719,10 +1725,11 @@ def TestSignal(whatsig):
         inData,t,_ = SignalGen(fS,tend,fx=f1,Ay=1,fy=f2,Az=1)
     elif dum == '4tone':
         # old was 13,17,54
-        x1,t,_ = SignalGen(fS,tend,fx=15,noisy=0)
-        x2,_,_ = SignalGen(fS,tend,fx=25,noisy=0)
-        x3,_,_ = SignalGen(fS,tend,fx=45,noisy=0)
-        x4,_,_ = SignalGen(fS,tend,fx=15+25+45,noisy=0)
+        # then was 15,25,45
+        x1,t,_ = SignalGen(fS,tend,fx=12,noisy=0)
+        x2,_,_ = SignalGen(fS,tend,fx=32,noisy=0)
+        x3,_,_ = SignalGen(fS,tend,fx=40,noisy=0)
+        x4,_,_ = SignalGen(fS,tend,fx=12+32+40,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x1 + x2 + x3 + x4 + nz
 
@@ -1910,7 +1917,7 @@ def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0.5):
         for a in range(lim-1):
             LoadBar(a,lim)
             # Apply for each scale (read: frequency)
-            dum = np.fft.ifft(fft_sig * Psi(a+1)) ###/ nyq          # Linear scale (f_a = a*f0)
+            dum = np.fft.ifft(fft_sig * Psi(a+1)) / Nsig         # Linear scale (f_a = a*f0)
             #dum = np.fft.ifft(fft_sig * Psi( 2**((a+1)/12) ))   # Equal-tempered
             #dum = np.fft.ifft(fft_sig * Psi( (a+1)/10 ) )
             CWT[a+1,:,k] = dum
@@ -2266,10 +2273,11 @@ def nRandSumLessThanUnity(n):
     while not foundIt:
         
         dum = np.random.random(n)
-        #dum.sort()
 
         if sum(dum)<=1:
             foundIt = True
+            dum.sort()
+            dum = dum[::-1]
             return dum
 
 def nRandSumLessThanUnityFAST(n):
