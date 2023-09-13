@@ -61,7 +61,11 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 9/12/2023 -> Changed alpha in scatter for PlotTrispec()
+# 9/12/2023 -> Changed alpha in scatter for PlotTrispec(); ApplyZPad() now
+# only used when SpecType='stft', fixed oversight with ZPad=False; thinking
+# about switching over Sigma to units of 1/f0 = N\Delta t; added AlphaExp 
+# attribute; fixed transcription error in ApplyCWT() [np.sqrt(.../alpha**)
+# was wrong! changed to np.sqrt(...) * alpha**]; WTrim now takes 10%
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/11/2023 -> Fixed issue with MonteCarloMax()'s use of NFreq attribute;
 # shuffled around PlotPointOut() behavior when PlotType='hybrid'; sort() now
@@ -325,6 +329,7 @@ class BicAn:
     LimFreq   = 2.
     Window    = 'hann'       
     Sigma     = 0.
+    AlphaExp  = 0.5
     CalcCOI   = False
     JustSpec  = False
     SpecType  = 'stft'
@@ -448,7 +453,7 @@ class BicAn:
     # Dependent properties
     @property
     def MaxRes(self):  # Maximum resolution
-        return self.SampRate / self.SubInt
+        return self.SampRate / self.SubInt if self.SpecType=='stft' else self.SampRate / self.Samples
 
     @property
     def NFreq(self):   # Number of Fourier bins  
@@ -543,6 +548,9 @@ class BicAn:
                         inData = np.transpose(inData) # Transpose if so
 
                     self.Raw = inData                 # Boom!
+                
+                # For CWT, mostly
+                self.Processed = self.Raw
             else:
                 error()
 
@@ -559,17 +567,17 @@ class BicAn:
                 # except AttributeError:
                 #     print('***WARNING*** :: BicAn has no {} attribute!'.format(key))
 
+
                 # This is how it's coded in the Matlab version, and doesn't care about cases! (Slower though...)
                 dum  = dir(BicAn)                                       # Get class info as list of strings
                 attr = [x.lower() for x in dum if x[0] != "_"]          # Keep only attributes, make lowercase
                 if key.lower() in attr:                                 # Make input lowercase
-                    for k in range(len(attr)):                          # Loop through all attributes (slow part!)
-                        if key.lower() == attr[k]:                      # If input is an attribute:
-                            dumval = eval( 'self.{}'.format(dum[k]) )   # Get default value for type comparison
-                            if isinstance(val, type(dumval)):           # Check type
-                                setattr(self, dum[k], val)              # Set attribute
-                            else: 
-                                print('***WARNING*** :: {} must be a {}! Using default value = {}'.format(dum[k],type(dumval),dumval))        
+                    k = attr.index(key.lower())                 # Get index
+                    dumval = eval( 'self.{}'.format(dum[k]) )   # Get default value for type comparison
+                    if isinstance(val, type(dumval)):           # Check type
+                        setattr(self, dum[k], val)              # Set attribute
+                    else: 
+                        print('***WARNING*** :: {} must be a {}! Using default value = {}'.format(dum[k],type(dumval),dumval))        
                 else:
                     print('***WARNING*** :: BicAn has no {} attribute!'.format(key))
 
@@ -611,10 +619,10 @@ class BicAn:
                 dum = np.zeros((self.SubInt-tail_error, self._Nseries))
                 self.Processed = np.concatenate( (self.Raw, dum ) )
             else:
-                self.Processed = self.Raw
+                self.Processed = self.Raw # Could remove this now!
         else:
             # Truncate time series to fit integer number of stepped subintervals
-            samplim = self.Step * (self.Samples - self.SubInt) // self.Step + self.SubInt
+            samplim = self.Step * ((self.Samples - self.SubInt) // self.Step) + self.SubInt
             self.Processed = self.Raw[0:samplim]
 
 
@@ -623,10 +631,10 @@ class BicAn:
     # Main processing loop
     # ------------------
         start = time.time()
-
-        self.ApplyZPad()
+ 
         dum = self.SpecType.lower()
         if dum in ['fft', 'stft', 'fourier']:
+            self.ApplyZPad()
             self.SpectroSTFT()
             self.SpecType = 'stft'
         elif dum in ['wave', 'wavelet', 'cwt']:
@@ -678,13 +686,15 @@ class BicAn:
     # Wavelet method
     # ------------------
         if self.Sigma == 0: # Check auto
-            self.Sigma = np.pi*self.Samples/self.SampRate
+            #self.Sigma = np.pi*self.Samples/self.SampRate
+            self.Sigma = np.pi
 
         if self.Detrend:
             for k in range(self._Nseries):
                 self.Processed[:,k] = ApplyDetrend(self.Processed[:,k])
 
         # Subtract mean
+        # print(self.Processed)
         for k in range(self._Nseries):
             self.Processed[:,k] = self.Processed[:,k] - sum(self.Processed[:,k]) / len(self.Processed[:,k]) 
         
@@ -692,13 +702,13 @@ class BicAn:
         if self.Samples>self._WarnSize and self.SizeWarn:
             self.SizeWarnPrompt(self.Samples)
 
-        CWT,acwt,f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma,self.LimFreq)
+        CWT,acwt,f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma,self.LimFreq,self.AlphaExp)
 
         if self.CalcCOI:
             nz = np.zeros((len(self.Processed),1))
             nz[0,:] = 1
             nz[-1,:] = 1
-            nzCWT,_,_,_ = ApplyCWT(nz,self.SampRate,self.Sigma,self.LimFreq)
+            nzCWT,_,_,_ = ApplyCWT(nz,self.SampRate,self.Sigma,self.LimFreq,self.AlphaExp)
             for k in range(self._Nseries):
                 coiMask = ( (abs(nzCWT)/np.max(abs(nzCWT)) ) < np.exp(-3) )
                 CWT[:,:,k] = CWT[:,:,k] * coiMask[:,:,0]
@@ -733,7 +743,8 @@ class BicAn:
     # ------------------       
         dum = self.sg 
         if self.SpecType == 'wave' and not self.CalcCOI:
-            WTrim = 50*2
+            #WTrim = 50*2
+            WTrim = self.NFreq // 10
             dum = self.sg[:,WTrim:-WTrim,:] 
         if self._Nseries==1:
             self.BicVec = [0, 0, 0]
@@ -1202,6 +1213,9 @@ class BicAn:
             # Maybe I misunderstand things?
             # chi2dist = np.exp(-b2vec/N) / 2
             # ax.plot(b2vec, chi2dist, linewidth=self.LineWidth, label=r'$(1/2N)\chi^2_2$')
+            # This should be chi-squared in general....
+            # from scipy.special import gamma
+            # X2 = lambda x,nu: x**(nu/2-1) * np.exp(-x/2) / ( 2**(nu/2) * gamma(nu/2) )
             print('nu = ',2 * m**2/np.var(g))
 
             b2crit = -m*np.log(1 - cVal)
@@ -1215,11 +1229,14 @@ class BicAn:
             # errb2 = 1/N
             ax.axvspan(b2true-errb2, b2true+errb2, facecolor='C2', alpha=0.2)
 
+            # Calculated standard deviation
+            ax.axvspan(b2true-(np.var(g))**0.5, b2true+(np.var(g))**0.5, facecolor='C2', alpha=0.2)
+
             yrange = [0, b2dist[0]]
             #yrange = [1e-3, b2dist[0]*10]
-            ax.axvline(b2crit, linewidth=self.LineWidth, color='C1', label=r'$99.9\%$ CI',)
+            ax.axvline(b2crit, linewidth=self.LineWidth, color='C1', label=r'$99.9\%$ CI')
             ax.axvline(b2true, linewidth=self.LineWidth, color='C2', label='Measured',)
-            ax.axvline(b2noise, linewidth=self.LineWidth, color='C3', label='Noise floor',)
+            ax.axvline(b2noise, linewidth=self.LineWidth, color='C3', label='Noise floor')
 
             PlotLabels(fig,ax,['$b^2$' + pntstr[0],r'$\mathrm{PDF}$'], self.FontSize, self.CbarNorth)
 
@@ -1349,7 +1366,7 @@ class BicAn:
             self.PlotHelper('b2Prob',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs)
 
         elif self.PlotType in ['abs','real','imag','angle']:
-            self.PlotHelper('BvsTime',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs)
+            self.PlotHelper('BvsTime',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs,CheckNeighbors=CheckNeighbors)
 
         return X,Y
         
@@ -1888,7 +1905,7 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
     return spec,afft,freq_vec,time_vec,err,Ntoss
 
 
-def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0.5):
+def ApplyCWT(sig,samprate=1,sigma=3.14,limFreq=2,alphaExp=0.5):
 # ------------------
 # Wavelet static method
 # ------------------
@@ -1904,7 +1921,8 @@ def ApplyCWT(sig,samprate,sigma,limFreq=2,alphExp=0.5):
     CWT  = np.zeros((lim,nyq,N),dtype=complex)
 
     # Morlet wavelet in frequency space
-    Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/a**(alphExp-0.5)) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
+    ###Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma) * a**(alphaExp-0.5) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
+    Psi = lambda a: (np.pi**0.25)*np.sqrt(2) * a**(alphaExp-0.5) * np.exp( -2 * np.pi**2 * (sigma/a)**2 * ( np.arange(nyq) - a)**2 )
 
     for k in range(N):
         fft_sig = np.fft.fft(sig[:,k])
@@ -2222,20 +2240,6 @@ def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None):
         # fig.colorbar(line, ax=ax, label=cbar)
 
 
-# def GetClick(event):
-# # ------------------
-# # Callback for clicks
-# # ------------------
-#     try:
-        
-#         clickx, clicky = event.xdata, event.ydata
-#         buf = 'x = %3.3f, y = %3.3f' % (clickx, clicky)
-#         print(buf)
-#     except TypeError:
-#         print('You can''t click outside the axis!')
-#     return 
-
-
 def RunDemo():
 # ------------------
 # Demonstration
@@ -2279,24 +2283,6 @@ def nRandSumLessThanUnity(n):
             dum.sort()
             dum = dum[::-1]
             return dum
-
-def nRandSumLessThanUnityFAST(n):
-# ------------------
-# Outputs n numbers whose sum is < 1
-# ------------------
-
-### DOESN"T WORK! NUMBERS ARE NOT EVENLY DISTRIBUTED
-# ~> Is faster!
-
-    S = 1
-    dum = np.zeros(n)
-    for k in range(n):
-
-        dum[k] = S * np.random.random()
-        S -= dum[k]
-
-    return dum
-
 
 
 def DrawSimplex(flim):
