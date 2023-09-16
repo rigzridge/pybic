@@ -61,11 +61,17 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 9/14/2023 -> Finally added FindMaxInRange() class method and ApplyFilter()
+# module function [latter needs debugged!]; NoXLabel variable now used for 
+# PlotHelper() to make simpler "stacked" plots of biphase and |B| (say) 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/12/2023 -> Changed alpha in scatter for PlotTrispec(); ApplyZPad() now
 # only used when SpecType='stft', fixed oversight with ZPad=False; thinking
 # about switching over Sigma to units of 1/f0 = N\Delta t; added AlphaExp 
 # attribute; fixed transcription error in ApplyCWT() [np.sqrt(.../alpha**)
-# was wrong! changed to np.sqrt(...) * alpha**]; WTrim now takes 10%
+# was wrong! changed to np.sqrt(...) * alpha**]; WTrim now takes 10% instead
+# of 100 points from both sides; ParseInput() sped up w/ ".index()" method;
+# plots of pdf now show both measured and analytic uncertainty
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/11/2023 -> Fixed issue with MonteCarloMax()'s use of NFreq attribute;
 # shuffled around PlotPointOut() behavior when PlotType='hybrid'; sort() now
@@ -277,6 +283,7 @@
 # ** Comment the code!!!
 # __ Fix butt-ugly inputs to PlotPointOut children!
 # ** Flag for base units (maybe not based in time, say)
+# ** Antialiased option!
 
 # Methods left:
 #{
@@ -958,12 +965,19 @@ class BicAn:
         return
 
 
-    def PlotBispec(self,*args,normb2=False):
+    def PlotBispec(self,*args,normb2=False,plot3d=False):
     # ------------------
     # Plot bispectrum
     # ------------------
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
+
+            if plot3d:
+                ###
+                #ax = fig.add_subplot(111, projection='3d')
+                #ax = plt.figure().add_subplot(projection='3d')
+                fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
+
             cax = None
         else:
             fig = args[0]
@@ -988,10 +1002,18 @@ class BicAn:
 
         if self._Nseries==1:
             f = self.fv/10**self.FScale
-            if normb2:
-                im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto', vmin=0, vmax=1)
+            if plot3d:
+                print('hey!')
+                # EXPERIMENTAL 3D OPTION!!!
+                X,Y = np.meshgrid(f, f[0:len(f)//2] )
+                im = ax.plot_surface(X, Y, dum, cmap=self.CMap, lw=1, antialiased=True, rstride=10, cstride=10)
+                return
             else:
-                im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
+                if normb2:
+                    im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto', vmin=0, vmax=1)
+                else:
+                    im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
+
             ax.set_ylim(f[0], f[-1]/2)
 
             # Draw triangle
@@ -1140,7 +1162,7 @@ class BicAn:
         self.PlotType = old_plot
 
 
-    def PlotHelper(self,whatPlot,X,Y,IsFreq=False,CheckNeighbors=False,fig=None,ax=None,Ntrials=200,b2bins=100,cVal=0.999,SaveAs=None):
+    def PlotHelper(self,whatPlot,X,Y,IsFreq=False,CheckNeighbors=False,fig=None,ax=None,Ntrials=200,b2bins=100,cVal=0.999,SaveAs=None,NoXLabel=False):
     # ------------------
     # Estimate and plot distribution of b2 for single point
     # ------------------
@@ -1279,7 +1301,7 @@ class BicAn:
             _,ystr = self.WhichPlot(local=self.bs)
             if self.PlotType == 'angle':
                 ystr = ystr + r'/$\pi$'
-            tstr = r'$t\, [\mathrm{%ss}]$' % ( ScaleToString(self.TScale) )
+            tstr = r'$t\, [\mathrm{%ss}]$' % ( ScaleToString(self.TScale) ) if not NoXLabel else ''
             PlotLabels(fig,ax,[tstr,ystr],self.FontSize,self.CbarNorth)
 
         elif whatPlot=='Phasor':
@@ -1410,7 +1432,7 @@ class BicAn:
     # ------------------
     # GUI test
     # ------------------
-        fig = plt.figure(dpi=self.PlotDPI)
+        fig = plt.figure(dpi=self.PlotDPI) ###,figsize=[9,6])
 
         ax1 = plt.subplot(121)
         ax2 = plt.subplot(222)
@@ -1431,6 +1453,82 @@ class BicAn:
         self.NewGUICax = True
         self.RefreshGUI()
         return
+
+
+    def FindMaxInRange(self,FxLo,FxHi,FyLo,FyHi,useb2=True):
+    # ------------------
+    # Finds maximum bicoherence in given range
+    # Good for tracking a particular feature
+    # ------------------
+        
+        # TODO: Set up for cross-b^2 and tricoherence
+
+        # Transform to desired scaling
+        dum = self.fv / 10**self.FScale
+        vx = (dum>FxLo) * (dum<FxHi) * 1
+        vy = (dum>FyLo) * (dum<FyHi) * 1
+        
+        vy = vy[0:len(vy)//2]
+        
+        # bicMask = vy.' * vx;
+        # dumBic = bicMask .* bic.bc
+        # [maxVal,Ic] = max(max(dumBic))
+        # [~,Ir] = max(max(dumBic.'))
+        bicMask = np.outer(vy,vx)
+        dumBic = bicMask * self.bc if useb2 else bicMask * abs(self.bs)
+
+        # Two ways to do this!
+        maxVal = dumBic.max()
+        I = dumBic.argmax()
+        # Ir = I // dumBic.shape[1]
+        # Ic = I %  dumBic.shape[1]
+        Ir,Ic = np.unravel_index(I, dumBic.shape)
+        
+        fX = dum[Ic]
+        fY = dum[Ir]
+        
+        print('Maximum found! Value is %.4f @ row = %d, column = %d' % (maxVal,Ir,Ic))
+        print('Scaled frequency equivalents are freqX = %.2f, freqY = %.2f' % (fX,fY))
+
+        return Ir,Ic,maxVal
+        
+        
+        # function [Ir,Ic,maxVal] = FindMaxAboveLim(bic,FreqLow)
+        # % ------------------
+        # % Finds maximum bicoherence above frequency limit
+        # % Good for ignoring low-frequency shizz
+        # % ------------------
+        
+        # % Get maxima in each column
+        # [m,I] = max(bic.bc);
+        # % Sort in descending order
+        # [mSorted,IX] = sort(m,'descend');
+        
+        # stillLooking = true;
+        # cnt = 1;
+        # % Walk down list of maxima, choose the first above limit
+        # while stillLooking
+        #     % Get column of current maximum
+        #     testCol = IX(cnt);
+        #     if ( bic.fv(testCol) / 10^bic.FScale ) > FreqLow
+        #         % Boom!
+        #         stillLooking = false;
+        #     else
+        #         cnt = cnt + 1;
+        #     end          
+        # end
+        
+        # maxVal = mSorted(cnt);
+        # Ic = testCol;
+        # Ir = I(testCol);
+        
+        # fX = bic.fv(Ic) / 10^bic.FScale;
+        # fY = bic.fv(Ir) / 10^bic.FScale;
+        
+        # fprintf('Maximum found! Value is %.4f @ row = %d, column = %d\n',maxVal,Ir,Ic);
+        # fprintf('Scaled frequency equivalents are freqX = %.2f, freqY = %.2f\n',fX,fY);
+        
+        # end % FindMaxAboveLim
 
 
     def SizeWarnPrompt(self,n):
@@ -1662,8 +1760,6 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
     ax.tick_params(labelsize=9*fsize//10)
     ax.minorticks_on()
 
-    #cid = fig.canvas.mpl_connect('button_press_event', GetClick)
-
     # Append ticklabels
     labels += ax.get_xticklabels()
     labels += ax.get_yticklabels()    
@@ -1782,7 +1878,7 @@ def TestSignal(whatsig):
         z,_,_ = SignalGen(fS,tend,Ax=0,Ay=1,fy=f1-f2,noisy=0)
         A,_,_ = SignalGen(fS,tend,fx=Ff,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
-        inData = x + y - Az * (A**4)*x*y + 0.0*z + nz
+        inData = x + y + Az * (A**4)*x*y + 0.0*z + nz/2
     elif dum == 'amtest':
         fS = 500
         f1 = 15
@@ -2172,6 +2268,31 @@ def HannWindow(N,q=2):
     return win
 
 
+def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
+# ------------------
+# Applies quick & dirty bandpass with brickwall
+# ------------------
+    N = len(x)
+    fftx = np.fft.fft(x)
+
+    plt.plot(abs(fftx))
+
+    Klo  = np.ceil( (N/fS) * (f0 - fband ) ).astype(int)
+    Khi  = np.ceil( (N/fS) * (f0 + fband ) ).astype(int)
+
+    # fftx[0:Klo] = 0
+    # fftx[(-Klo):-1] = 0
+    # fftx[Khi:(-Khi)] = 0
+    fftx[0:Klo] = 0
+    fftx[(-1-Klo+1):-1] = 0
+    fftx[Khi:(-1-Khi+1)] = 0
+
+    plt.plot(abs(fftx))
+    plt.show()
+
+    return np.real(np.fft.ifft(fftx))    # Invert it!
+
+
 def ApplyDetrend(y):
 # ------------------
 # Remove linear trend
@@ -2204,7 +2325,7 @@ def LoadBar(m,M):
     return
 
 
-def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None):
+def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None,fsize=14):
 # ------------------
 # Plot line with color
 # ------------------
@@ -2236,7 +2357,7 @@ def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None):
         fig.colorbar(line, cax=cax, orientation='horizontal')   
         cax.xaxis.set_label_position('top') 
         cax.xaxis.tick_top()     
-        cax.set_xlabel(cbar) ### fontsize=fsize, fontweight=fweight)
+        cax.set_xlabel(cbar,fontsize=fsize) ###, fontweight=fweight)
         # fig.colorbar(line, ax=ax, label=cbar)
 
 
