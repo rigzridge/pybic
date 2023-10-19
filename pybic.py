@@ -61,6 +61,10 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 10/19/2023 -> Option to plot maximum of TFR ('maxLine' parameter) added to
+# PlotSpectro(); fixed oversight with WTrim [was using NFreq instead of 
+# len(self.tv)]; new 'TLineCol' attribute to control timeline color
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/14/2023 -> Finally added FindMaxInRange() class method and ApplyFilter()
 # module function [latter needs debugged!]; NoXLabel variable now used for 
 # PlotHelper() to make simpler "stacked" plots of biphase and |B| (say) 
@@ -357,6 +361,7 @@ class BicAn:
     PlotType  = 'bicoh'
     ScaleAxes = 'manual'
     TickLabel = 'normal'
+    TLineCol  = 'twilight'
     LineWidth = 2
     FontSize  = 20
     PlotDPI   = 150
@@ -751,7 +756,7 @@ class BicAn:
         dum = self.sg 
         if self.SpecType == 'wave' and not self.CalcCOI:
             #WTrim = 50*2
-            WTrim = self.NFreq // 10
+            WTrim = len(self.tv) // 10
             dum = self.sg[:,WTrim:-WTrim,:] 
         if self._Nseries==1:
             self.BicVec = [0, 0, 0]
@@ -928,7 +933,7 @@ class BicAn:
         return
 
 
-    def PlotSpectro(self,*args,vLim=[]):
+    def PlotSpectro(self,*args,vLim=[],maxLine=-1):
     # ------------------
     # Plot spectrograms
     # ------------------
@@ -958,6 +963,15 @@ class BicAn:
             self.CaxHands[1] = cax
         ax.set_xlim(t[0], t[-1])
         ax.set_ylim(f[0], f[-1])
+
+        if maxLine>=0:
+            _,Nf = arrmin( abs( f - maxLine ) )
+            
+            finst = 0*self.tv
+            for k in range(len(self.tv)):
+                _,m = arrmin( -abs(self.sg[Nf:,k,self.PlotSig]))
+                finst[k] = self.fv[Nf+m]
+            ax.plot(t, finst / 10**self.FScale, color='gray')
 
         if len(args)==0:
             plt.tight_layout()
@@ -1097,6 +1111,15 @@ class BicAn:
         # cax = divider.append_axes(cbarloc, size='5%', pad=0.05)
         #fig.colorbar(im,ax=ax,shrink=0.75)
 
+        # "Paint axes"
+        # plt.plot([0 f(x)],[0 0],[0 0],'-r',lw=1.25)
+        # plt.plot([0 0],[0 f(y)],[0 0],'-b',lw=1.25)
+        # plt.plot([0 0],[f(lim2) f(lim2)],[0 f(z)],'-g',lw=1.25)
+        
+        # plt.plot([f(x) f(x)],[f(y) f(lim2)],[f(z) f(z)],'-bo',lw=1.25)
+        # plt.plot([f(x) f(x)],[f(y) f(y)],[0 f(z)],'-go',lw=1.25)
+        # plt.plot([f(x) f(lim)],[f(y) f(y)],[f(z) f(z)],'-ro',lw=1.25)
+
         DrawSimplex(f[-1])
         
         plt.tight_layout()
@@ -1202,6 +1225,9 @@ class BicAn:
         if CheckNeighbors and len(X)==1:
             X = [X[0],X[0],X[0]-1,X[0]+1]
             Y = [Y[0],Y[0]+1,Y[0],Y[0]]
+            # For demo figure
+            # X = [X[0],X[0]-1,X[0]+1,X[0]+2]
+            # Y = [Y[0],Y[0],Y[0],Y[0]]
             self.PlotHelper(whatPlot=whatPlot,X=X,Y=Y,IsFreq=False,CheckNeighbors=CheckNeighbors,fig=fig,ax=ax,
                 Ntrials=Ntrials,b2bins=b2bins,cVal=cVal)
             return
@@ -1211,9 +1237,14 @@ class BicAn:
             g = np.zeros((Ntrials))
 
             print('Calculating distribution for {}...      '.format(pntstr[0]))
+            if self.SpecType=='wave':
+                WTrim = len(self.tv) // 10
+                dum = self.sg[:,WTrim:-WTrim,:] 
+            else:
+                dum = self.sg
             for k in range(Ntrials):
                 LoadBar(k,Ntrials)
-                g[k],_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],True)
+                g[k],_,_ = GetBispec(dum,self.BicVec,self.LilGuy,Y[0],X[0],True)
             print('\b\b^]\n')  
 
             # Limit b^2, create vector, and produce histogram 
@@ -1231,7 +1262,8 @@ class BicAn:
             b2dist = (1/m)*np.exp(-b2vec/m)
             ax.plot(b2vec, b2dist, linewidth=self.LineWidth, label=r'$(1/\mu)e^{-b^2/\mu}$')
 
-            N = len(self.tv)
+            ##N = len(self.tv)
+            N = dum.shape[1]
             # Maybe I misunderstand things?
             # chi2dist = np.exp(-b2vec/N) / 2
             # ax.plot(b2vec, chi2dist, linewidth=self.LineWidth, label=r'$(1/2N)\chi^2_2$')
@@ -1301,7 +1333,7 @@ class BicAn:
             _,ystr = self.WhichPlot(local=self.bs)
             if self.PlotType == 'angle':
                 ystr = ystr + r'/$\pi$'
-            tstr = r'$t\, [\mathrm{%ss}]$' % ( ScaleToString(self.TScale) ) if not NoXLabel else ''
+            tstr = ' ' if NoXLabel else r'$t\, [\mathrm{%ss}]$' % ( ScaleToString(self.TScale) )
             PlotLabels(fig,ax,[tstr,ystr],self.FontSize,self.CbarNorth)
 
         elif whatPlot=='Phasor':
@@ -1311,7 +1343,7 @@ class BicAn:
 
             t = self.tv/10**self.TScale
             tstr = r'$t\, [\mathrm{%ss}]$' % ScaleToString(self.TScale)
-            PlotTimeline(np.real(Bi),np.imag(Bi),t=t,fig=fig,ax=ax,lw=self.LineWidth,cmap='twilight',cbar=tstr)
+            PlotTimeline(np.real(Bi),np.imag(Bi),t=t,fig=fig,ax=ax,lw=self.LineWidth,cmap=self.TLineCol,cbar=tstr)
             ##PlotTimeline(np.real(Bi),np.imag(Bi),t=t,fig=fig,ax=ax,lw=self.LineWidth,cmap=self.CMap,cbar=tstr)
             ###ax.plot(np.real(Bi),np.imag(Bi),'o',label=pntstr)
             ax.set_xlim(-1,1)
@@ -1714,7 +1746,7 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
     n = len(strings)
 
     # Reduce fontsize for 3D plots
-    fsize = fsize if n<4 else 3*fsize//4
+    fsize = fsize if n<4 else 3*fsize/4
 
     # Kill grid if n>2
     grid = grid if n<=2 else False
@@ -1740,7 +1772,7 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         else:
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
-        cax.tick_params(labelsize=3*fsize//4)
+        cax.tick_params(labelsize=3*fsize/4)
         if cbarweight=='ticks':
             labels += cax.get_xticklabels()
             labels += cax.get_yticklabels()
@@ -1751,13 +1783,13 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         cbar = fig.colorbar(im,cax=None,ax=ax,shrink=0.75,label=strings[3])
 
         cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
-        cbar.ax.tick_params(labelsize=3*fsize//4)
+        cbar.ax.tick_params(labelsize=3*fsize/4)
 
         ###labels += ax.get_zticklabels()
         labels += cbar.ax.get_xticklabels()
         labels += cbar.ax.get_yticklabels()
 
-    ax.tick_params(labelsize=9*fsize//10)
+    ax.tick_params(labelsize=9*fsize/10)
     ax.minorticks_on()
 
     # Append ticklabels
@@ -1845,7 +1877,6 @@ def TestSignal(whatsig):
         x4,_,_ = SignalGen(fS,tend,fx=12+32+40,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x1 + x2 + x3 + x4 + nz
-
     elif dum == 'ntone':
         # ask how many
 
@@ -1878,7 +1909,7 @@ def TestSignal(whatsig):
         z,_,_ = SignalGen(fS,tend,Ax=0,Ay=1,fy=f1-f2,noisy=0)
         A,_,_ = SignalGen(fS,tend,fx=Ff,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
-        inData = x + y + Az * (A**4)*x*y + 0.0*z + nz/2
+        inData = x + y + Az * 0.0*(A**4)*x*y + 0.0*z + nz/2
     elif dum == 'amtest':
         fS = 500
         f1 = 15
@@ -1938,11 +1969,28 @@ def TestSignal(whatsig):
         inData[:,1] = y
         inData[:,2] = z
     elif dum == 'helix':
-        x,t,_  = SignalGen(fS,tend,fx=f1,Afx=10,Ff=1/20,noisy=0)
-        y,_,_  = SignalGen(fS,tend,Ax=0,fx=0,Ay=1,fy=f2,Afy=10,Ff=1/20,noisy=0)
-        z,_,_  = SignalGen(fS,tend,Ax=0,fx=f1,Afx=10,Ay=0,fy=f2,Afy=10,Az=1,Ff=1/20,noisy=0)
-        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
-        inData = x + y + z + x*y*z + nz
+        t = np.arange(0,tend,1/fS)  # Time-vector sampled at "fS" Hz
+                     
+        fx = 42.
+        fy = 25.
+        fz = 0.
+
+        Ff = 0.05
+        #Af = 3. / (2*pi*Ff);
+        Af = 8. * np.exp(-2*t/tend) / (2*np.pi*Ff);
+
+        dfx = Af * np.sin(2*np.pi*t*Ff)                  # delta f1
+        dfy = Af * np.cos(2*np.pi*t*Ff)                  # delta f2
+        dfz = 0.5 * t**2 * 2./10
+        x = np.sin( 2*np.pi*(fx*t + dfx) )              # f1
+        y = np.sin( 2*np.pi*(fy*t + dfy) )              # f2
+        z = np.sin( 2*np.pi*(fz*t + dfz) )              # f3
+
+        phi = 0.5 * np.pi * np.sin(np.pi*t/tend)**2;
+
+        u = np.sin( 2*np.pi*(fx*t + fy*t + fz*t + dfx + dfy + dfz) + phi) # f1 + f2
+
+        inData = x + y + z + u + noisy*(0.5*np.random.random(len(t)) - 1)
     else:
         print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(whatsig)) 
         inData,t,fS = SignalGen(fS,tend,1,22,0,0,0,0,0,0,0)
@@ -2275,7 +2323,7 @@ def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
     N = len(x)
     fftx = np.fft.fft(x)
 
-    plt.plot(abs(fftx))
+    # plt.plot(abs(fftx))
 
     Klo  = np.ceil( (N/fS) * (f0 - fband ) ).astype(int)
     Khi  = np.ceil( (N/fS) * (f0 + fband ) ).astype(int)
@@ -2287,10 +2335,11 @@ def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
     fftx[(-1-Klo+1):-1] = 0
     fftx[Khi:(-1-Khi+1)] = 0
 
-    plt.plot(abs(fftx))
-    plt.show()
+    # plt.plot(abs(fftx))
+    # plt.show()
 
-    return np.real(np.fft.ifft(fftx))    # Invert it!
+    #return np.real(np.fft.ifft(fftx))    # Invert it!
+    return fftx    # Invert it!
 
 
 def ApplyDetrend(y):
