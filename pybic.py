@@ -1813,7 +1813,7 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
     return cax
 
 
-def PlotRHS(x,y,ax=plt.gca(),r_col='gray',ylab='',ylim=[],fsize=20,alph=1.0,lw=2):
+def PlotRHS(x,y,ax,r_col='gray',ylab='',ylim=[],fsize=20,alph=1.0,lw=2):
 # ------------------
 # Simplifies twin-axis stuff
 # ------------------
