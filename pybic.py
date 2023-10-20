@@ -63,7 +63,9 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 10/19/2023 -> Option to plot maximum of TFR ('maxLine' parameter) added to
 # PlotSpectro(); fixed oversight with WTrim [was using NFreq instead of 
-# len(self.tv)]; new 'TLineCol' attribute to control timeline color
+# len(self.tv)]; new 'TLineCol' attribute to control timeline color; 'COILim'
+# attribute controls COI shape; finally fixed ApplySimpleFilter(); PlotRHS()
+# method written to simplify twinx() axes
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 9/14/2023 -> Finally added FindMaxInRange() class method and ApplyFilter()
 # module function [latter needs debugged!]; NoXLabel variable now used for 
@@ -331,6 +333,7 @@ class BicAn:
     Note      = ' '
     Raw       = []
     Processed = []
+    InstFreq  = []
     History   = ' '
 
     SampRate  = 1.
@@ -342,6 +345,7 @@ class BicAn:
     Sigma     = 0.
     AlphaExp  = 0.5
     CalcCOI   = False
+    COILim    = -3
     JustSpec  = False
     SpecType  = 'stft'
     Bispectro = False
@@ -722,7 +726,7 @@ class BicAn:
             nz[-1,:] = 1
             nzCWT,_,_,_ = ApplyCWT(nz,self.SampRate,self.Sigma,self.LimFreq,self.AlphaExp)
             for k in range(self._Nseries):
-                coiMask = ( (abs(nzCWT)/np.max(abs(nzCWT)) ) < np.exp(-3) )
+                coiMask = ( (abs(nzCWT)/np.max(abs(nzCWT)) ) < np.exp(self.COILim) )
                 CWT[:,:,k] = CWT[:,:,k] * coiMask[:,:,0]
                 acwt[:,k]  = np.mean(abs(CWT[:,:,k])**2,1)
 
@@ -971,6 +975,8 @@ class BicAn:
             for k in range(len(self.tv)):
                 _,m = arrmin( -abs(self.sg[Nf:,k,self.PlotSig]))
                 finst[k] = self.fv[Nf+m]
+
+            self.InstFreq = finst
             ax.plot(t, finst / 10**self.FScale, color='gray')
 
         if len(args)==0:
@@ -1807,6 +1813,27 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
     return cax
 
 
+def PlotRHS(x,y,ax=plt.gca(),r_col='gray',ylab='',ylim=[],fsize=20,alph=1.0,lw=2):
+# ------------------
+# Simplifies twin-axis stuff
+# ------------------
+    ax_r = ax.twinx()
+
+    ax_r.plot(x, y, color=r_col, alpha=alph, lw=lw)
+
+    labels = []
+    labels += ax_r.get_yticklabels()
+    for label in labels:
+        label.set_fontweight('bold')
+        label.set_color(r_col)
+    if len(ylim)!=0:
+        ax_r.set_ylim(ylim[0],ylim[1])
+    ax_r.set_ylabel(ylab,fontsize=fsize,color=r_col)
+    ax_r.tick_params(labelsize=9*fsize/10)
+    ax_r.minorticks_on()
+    return ax_r
+
+
 def SignalGen(fS=1,tend=100,Ax=1,fx=1,Afx=0,Ay=0,fy=0,Afy=0,Az=0,Ff=0,noisy=2):
 # ------------------
 # Provides 3-osc FM test signal
@@ -2320,10 +2347,12 @@ def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
 # ------------------
 # Applies quick & dirty bandpass with brickwall
 # ------------------
+
+    # This is kind of crazy! But without this things might break...
+    x = np.reshape(x,[x.shape[0]])
+
     N = len(x)
     fftx = np.fft.fft(x)
-
-    # plt.plot(abs(fftx))
 
     Klo  = np.ceil( (N/fS) * (f0 - fband ) ).astype(int)
     Khi  = np.ceil( (N/fS) * (f0 + fband ) ).astype(int)
@@ -2335,11 +2364,7 @@ def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
     fftx[(-1-Klo+1):-1] = 0
     fftx[Khi:(-1-Khi+1)] = 0
 
-    # plt.plot(abs(fftx))
-    # plt.show()
-
-    #return np.real(np.fft.ifft(fftx))    # Invert it!
-    return fftx    # Invert it!
+    return np.real(np.fft.ifft(fftx))    # Invert it!
 
 
 def ApplyDetrend(y):
