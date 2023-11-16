@@ -61,6 +61,8 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 11/10/2023 -> Adding "inCOI" attribute to avoid redundant calculations
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 10/19/2023 -> Option to plot maximum of TFR ('maxLine' parameter) added to
 # PlotSpectro(); fixed oversight with WTrim [was using NFreq instead of 
 # len(self.tv)]; new 'TLineCol' attribute to control timeline color; 'COILim'
@@ -345,7 +347,8 @@ class BicAn:
     Sigma     = 0.
     AlphaExp  = 0.5
     CalcCOI   = False
-    COILim    = -3
+    COILim    = -3.0
+    InCOI     = np.array([])
     JustSpec  = False
     SpecType  = 'stft'
     Bispectro = False
@@ -721,12 +724,13 @@ class BicAn:
         CWT,acwt,f,t = ApplyCWT(self.Processed,self.SampRate,self.Sigma,self.LimFreq,self.AlphaExp)
 
         if self.CalcCOI:
-            nz = np.zeros((len(self.Processed),1))
-            nz[0,:] = 1
-            nz[-1,:] = 1
-            nzCWT,_,_,_ = ApplyCWT(nz,self.SampRate,self.Sigma,self.LimFreq,self.AlphaExp)
+            if len(self.InCOI)==0:
+                nz = np.zeros((len(self.Processed),1))
+                nz[0,:] = 1
+                nz[-1,:] = 1
+                self.InCOI,_,_,_ = ApplyCWT(nz,self.SampRate,self.Sigma,self.LimFreq,self.AlphaExp)
             for k in range(self._Nseries):
-                coiMask = ( (abs(nzCWT)/np.max(abs(nzCWT)) ) < np.exp(self.COILim) )
+                coiMask = ( (abs(self.InCOI)/np.max(abs(self.InCOI)) ) < np.exp(self.COILim) )
                 CWT[:,:,k] = CWT[:,:,k] * coiMask[:,:,0]
                 acwt[:,k]  = np.mean(abs(CWT[:,:,k])**2,1)
 
@@ -1229,11 +1233,11 @@ class BicAn:
             Y = np.array(Y) - len(self.fv)
 
         if CheckNeighbors and len(X)==1:
-            X = [X[0],X[0],X[0]-1,X[0]+1]
-            Y = [Y[0],Y[0]+1,Y[0],Y[0]]
+            # X = [X[0],X[0],X[0]-1,X[0]+1]
+            # Y = [Y[0],Y[0]+1,Y[0],Y[0]]
             # For demo figure
-            # X = [X[0],X[0]-1,X[0]+1,X[0]+2]
-            # Y = [Y[0],Y[0],Y[0],Y[0]]
+            X = [X[0],X[0]-1,X[0]+1,X[0]+2]
+            Y = [Y[0],Y[0],Y[0],Y[0]]
             self.PlotHelper(whatPlot=whatPlot,X=X,Y=Y,IsFreq=False,CheckNeighbors=CheckNeighbors,fig=fig,ax=ax,
                 Ntrials=Ntrials,b2bins=b2bins,cVal=cVal)
             return
@@ -1432,7 +1436,7 @@ class BicAn:
         
 
 
-    def RefreshGUI(self):
+    def RefreshGUI(self,SaveAs=None):
     # ------------------
     # GUI test
     # ------------------ 
@@ -1461,24 +1465,28 @@ class BicAn:
         self.PlotPowerSpec(fig,self.AxHands[2])       
 
         plt.tight_layout()
-        plt.show()
+        if SaveAs is None:
+            plt.show()
+        else:
+            fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
+            plt.close(fig)
         self.NewGUICax = False
         return
 
 
-    def PlotGUI(self):
+    def PlotGUI(self,SaveAs=None):
     # ------------------
     # GUI test
     # ------------------
         fig = plt.figure(dpi=self.PlotDPI) ###,figsize=[9,6])
 
-        ax1 = plt.subplot(121)
-        ax2 = plt.subplot(222)
-        ax3 = plt.subplot(224)
-
-        # ax1 = plt.subplot(211)
-        # ax2 = plt.subplot(223)
+        # ax1 = plt.subplot(121)
+        # ax2 = plt.subplot(222)
         # ax3 = plt.subplot(224)
+
+        ax1 = plt.subplot(221)
+        ax2 = plt.subplot(122)
+        ax3 = plt.subplot(223)
 
         # Save figure and axes with object
         self.Figure = fig
@@ -1489,7 +1497,7 @@ class BicAn:
         pid = fig.canvas.mpl_connect('key_press_event', self.SwitchPlot)
         
         self.NewGUICax = True
-        self.RefreshGUI()
+        self.RefreshGUI(SaveAs=SaveAs)
         return
 
 
@@ -1936,7 +1944,7 @@ def TestSignal(whatsig):
         z,_,_ = SignalGen(fS,tend,Ax=0,Ay=1,fy=f1-f2,noisy=0)
         A,_,_ = SignalGen(fS,tend,fx=Ff,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
-        inData = x + y + Az * 0.0*(A**4)*x*y + 0.0*z + nz/2
+        inData = x + y + Az * (A**4)*x*y + 0.0*z + nz/2
     elif dum == 'amtest':
         fS = 500
         f1 = 15
