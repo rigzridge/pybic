@@ -3,7 +3,7 @@
 #      ______     ______ _      
 #      | ___ \    | ___ (_)          Bicoherence Analysis Module for Python
 #      | |_/ /   _| |_/ /_  ___      --------------------------------------
-#      |  __/ | | | ___ \ |/ __|               v2.0 (c) 2022-2023
+#      |  __/ | | | ___ \ |/ __|               v2.0 (c) 2022-2024
 #      | |  | |_| | |_/ / | (__                        
 #      \_|   \__, \____/|_|\___|              G. Riggs & T. Matheny
 #             __/ |                      
@@ -60,6 +60,9 @@
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 3/14/2024 -> Finally moved over ApplyBandpass(), ApplyRealBandpass() and
+# InstFreq() methods from HP. What better day to debug than pi day?
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 11/10/2023 -> Adding "inCOI" attribute to avoid redundant calculations
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -310,6 +313,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
+from scipy.signal import butter, sosfiltfilt, sosfreqz
+from scipy.signal import hilbert
 
 # Computer modern font (LaTeX default)
 plt.rcParams['mathtext.fontset'] = 'cm'
@@ -377,6 +382,7 @@ class BicAn:
     PlotSlice = None
     PlotSig   = 0
     BicOfTime = False
+    CalcInstFreq = False
 
     Verbose   = False
     Detrend   = False
@@ -1480,13 +1486,14 @@ class BicAn:
     # ------------------
         fig = plt.figure(dpi=self.PlotDPI) ###,figsize=[9,6])
 
-        # ax1 = plt.subplot(121)
-        # ax2 = plt.subplot(222)
-        # ax3 = plt.subplot(224)
+        ax1 = plt.subplot(121)
+        ax2 = plt.subplot(222)
+        ax3 = plt.subplot(224)
 
-        ax1 = plt.subplot(221)
-        ax2 = plt.subplot(122)
-        ax3 = plt.subplot(223)
+        # Alternate joint ~> Should have option, yes?
+        # ax1 = plt.subplot(221)
+        # ax2 = plt.subplot(122)
+        # ax3 = plt.subplot(223)
 
         # Save figure and axes with object
         self.Figure = fig
@@ -1627,7 +1634,7 @@ class BicAn:
             # 1 = MouseButton.LEFT
             # 3 = MouseButton.RIGHT
             if event.button==1:
-                self.PlotPointOut([Ix],[Iy])
+                self.PlotPointOut([Ix],[Iy]) if not self.CalcInstFreq else InstFreq(self,Ix,Iy,diff_freq=True,freq_type='hilbert',fband=self.SampRate/200,fwindow=self.SampRate/100)
             elif event.button==3:
                 self.PlotPointOut([Ix],[Iy],PlotAll=True)
 
@@ -1669,6 +1676,8 @@ class BicAn:
             self.PlotType = 'bicoh'
         elif key == 'T':
             self.BicOfTime = not self.BicOfTime
+        elif key == 'F':
+            self.CalcInstFreq = not self.CalcInstFreq
         elif key == 'right':
             self.PlotSlice = 0 if self.PlotSlice is None else (self.PlotSlice + 10) % len(self.tv) 
         elif key == 'left':
@@ -1771,6 +1780,8 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
     ax.set_xlabel(strings[0], fontsize=fsize, fontweight=fweight)
     if n>1:
         ax.set_ylabel(strings[1], fontsize=fsize, fontweight=fweight)
+        # For rotated y axis labels
+        # ax.set_ylabel('abc', rotation=0, fontsize=20, labelpad=20)
     if n==3:
         if cax is None:
             divider = make_axes_locatable(ax)
@@ -1877,7 +1888,7 @@ def SignalGen(fS=1,tend=100,Ax=1,fx=1,Afx=0,Ay=0,fy=0,Afy=0,Az=0,Ff=0,noisy=2):
     #phi = np.pi/4
     #z = Az*np.abs(np.sin(2*np.pi*Ff*t))**4 * x*y + 0*np.sin(2*np.pi*(fx*t + fy*t + phi))
 
-    sig = x + y + z + noisy*(0.5*np.random.random(len(t)) - 1)
+    sig = x + y + z + noisy*(np.random.random(len(t)) - 0.5)
     #sig = np.reshape(sig, ( len(sig), 1 )) # Output Nx1 numpy array
     return sig,t,float(fS)
 
@@ -1935,8 +1946,8 @@ def TestSignal(whatsig):
         inData = x + y + x * y + nz
     elif dum == 'd3dtest':
         fS = 500
-        f1 = 97
-        f2 = 84
+        f1 = 108 #97
+        f2 = 87  #84
         Ff = 1/20
         Az = -1
         x,t,_ = SignalGen(fS,tend,fx=f1,noisy=0)
@@ -2160,25 +2171,27 @@ def SpecToBispec(spec,v=[0,0,0],lilguy=1e-6):
         LoadBar(j,lim//2)
         
         for k in np.arange(j,lim-j):
-            p1 = spec[k,:,v[0]]
-            p2 = spec[j,:,v[1]]
-            s  = spec[j+k,:,v[2]]
+            # p1 = spec[k,:,v[0]]
+            # p2 = spec[j,:,v[1]]
+            # s  = spec[j+k,:,v[2]]
 
-            Bi  = p1 * p2 * np.conj(s)
-            e12 = abs(p1*p2)**2
-            e3  = abs(s)**2
+            # Bi  = p1 * p2 * np.conj(s)
+            # e12 = abs(p1*p2)**2
+            # e3  = abs(s)**2
 
-            Bjk = sum(Bi)                
-            E12 = sum(e12)             
-            E3  = sum(e3)                      
+            # Bjk = sum(Bi)                
+            # E12 = sum(e12)             
+            # E3  = sum(e3)                      
 
-            b2[j,k] = (abs(Bjk)**2)/(E12*E3+lilguy) 
+            # b2[j,k] = (abs(Bjk)**2)/(E12*E3+lilguy) 
 
-            B[j,k] = Bjk
+            # B[j,k] = Bjk
+
+            b2[j,k] , B[j,k] , _ = GetBispec(spec,v=v,lilguy=lilguy,j=j,k=k)
+
     B = B/slices
     print ('\b\b\b^]\n')    
-    return b2,B              
-
+    return b2,B
 
 def SpecToCrossBispec(spec,v=[0,0,0],lilguy=1e-6):
 # ------------------
@@ -2351,6 +2364,85 @@ def HannWindow(N,q=2):
     return win
 
 
+def InstFreq(q,j,k,diff_freq=False,freq_type='spectro',fband=5000,fwindow=10000,realBPF=True,SaveStr='',dWin=None):
+    # Perform instantaneous freq analysis
+    # \omega(t) = d\phi/dt, where \phi is instantaneous phase
+    
+    arr = [j,k,j+k]
+    
+    b2est,_,Bi = GetBispec(q.sg,q.BicVec,q.LilGuy,j=j,k=k)
+    
+    Nt = len(q.tv) if freq_type=='spectro' else len(q.Raw)
+    X = np.zeros( (3,Nt))
+    
+    for n in range(3):
+    
+        if freq_type=='spectro':  
+            
+            t = q.tv/10**q.TScale
+            df = q.fv[1]-q.fv[0]
+            dt = q.tv[1]-q.tv[0]
+            
+            dum = q.sg[arr[n],:,0]
+            
+        elif freq_type=='hilbert':
+            
+            dt = 1/q.SampRate
+            t = (q.TZero + np.arange(len(q.Raw)) * dt )/10**q.TScale
+            df = q.SampRate / len(q.Raw)
+            flim = q.fv[arr[n]]
+            if realBPF:
+                dum = ApplyRealBandpass(q.Raw[:,0],q.SampRate,flim,fband)
+            else:
+                dum = ApplyBandpass(q.Raw[:,0],df,flim,fband)
+            dum = hilbert(dum)
+               
+        X[n,:] = np.gradient( np.unwrap(np.angle(dum))) / dt
+            
+    
+    A3 = np.abs(q.sg[j+k,:,0])
+    
+    fig,ax = plt.subplots()   
+    
+    if not diff_freq:
+        ax.plot( t, X[0,:]/(2*np.pi) - q.fv[j] )
+        ax.plot( t, X[1,:]/(2*np.pi) - q.fv[k] )
+        ax.plot( t, X[2,:]/(2*np.pi) - q.fv[j+k] )
+        
+        # Attempt at coupling coefficient
+        #ax.plot( t, ( Z/(2*np.pi) - q.fv[j+k] ) / (np.imag(Bi) / A3) )
+        
+        specstr = '%s_InstFreq.png' % SaveStr
+    else:
+        ax.plot( t, (X[0,:]+X[1,:]-X[2,:])/(2*np.pi) )
+        
+        dBeta_dt = np.gradient( np.unwrap(np.angle(Bi))) / (q.tv[1]-q.tv[0])
+        ax.plot( q.tv/10**q.TScale, dBeta_dt/(2*np.pi) )
+
+        # Uncertainty as given in Fackrell
+        # For derivative, we have \sigma_f' = \sqrt(2) * sigma_f / dt
+        d_dt_err = np.sqrt( 2 * (1/b2est - 1) / len(q.tv) ) / (q.tv[1]-q.tv[0]) / (2*np.pi)
+        ax.fill_between( q.tv/10**q.TScale, dBeta_dt/(2*np.pi) - d_dt_err, dBeta_dt/(2*np.pi) + d_dt_err, color='C1', alpha=0.2)
+        
+        specstr = '%s_DiffFreq.png' % SaveStr
+        
+    ax.set_ylim(-fwindow,fwindow)
+    tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(q.TScale))
+    PlotLabels(fig,ax,[tstr,r'$\Delta f_{\rm inst}\,{\rm [Hz]}$'])  
+    
+    if dWin is not None:
+        ax.axvspan(dWin[0],dWin[1],color='cyan',alpha=0.2)
+    
+    plt.tight_layout()
+    if len(SaveStr)>0:
+        fig.savefig(specstr,dpi=q.PlotDPI,bbox_inches='tight')
+        plt.close(fig)
+    else:
+        plt.show()
+
+    return
+
+
 def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
 # ------------------
 # Applies quick & dirty bandpass with brickwall
@@ -2373,6 +2465,33 @@ def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
     fftx[Khi:(-1-Khi+1)] = 0
 
     return np.real(np.fft.ifft(fftx))    # Invert it!
+
+
+def ApplyBandpass(D,df,flim,fband):
+    fftD = np.fft.fft(D)
+
+    # Bandpass
+    Klo  = np.ceil((flim - fband )/df).astype(int)
+    Khi  = np.ceil((flim + fband )/df).astype(int)
+
+    fftD[0:Klo] = 0
+    fftD[(-1-Klo+1):-1] = 0
+    fftD[Khi:(-1-Khi+1)] = 0
+
+    return np.real(np.fft.ifft(fftD))
+
+
+def ApplyRealBandpass(D,fS,flim,fband,order=5):
+
+    lo = flim - fband
+    hi = flim + fband
+    
+    sos = butter(order, [lo, hi], fs=fS, btype='band', output='sos')
+    
+    #w,h = sosfreqz(sos,worN=256)
+    #plt.plot(w,abs(h))
+    #plt.show()
+    return sosfiltfilt(sos, D) 
 
 
 def ApplyDetrend(y):
