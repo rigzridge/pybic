@@ -61,6 +61,9 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 3/20/2024 -> Added WhittakerShannon() for interpolation, debugged beta 
+# version of InstFreqZeroCross() and InstDiffFreq()
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 3/14/2024 -> Finally moved over ApplyBandpass(), ApplyRealBandpass() and
 # InstFreq() methods from HP. What better day to debug than pi day?
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -315,6 +318,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
 from scipy.signal import butter, sosfiltfilt, sosfreqz
 from scipy.signal import hilbert
+from scipy.special import sici
 
 # Computer modern font (LaTeX default)
 plt.rcParams['mathtext.fontset'] = 'cm'
@@ -382,7 +386,7 @@ class BicAn:
     PlotSlice = None
     PlotSig   = 0
     BicOfTime = False
-    CalcInstFreq = False
+    InstFreqFlag = False
 
     Verbose   = False
     Detrend   = False
@@ -1473,6 +1477,8 @@ class BicAn:
         plt.tight_layout()
         if SaveAs is None:
             plt.show()
+            # Swapped this out after reading https://stackoverflow.com/questions/30880358/matplotlib-figure-not-updating-on-data-change
+            fig.canvas.draw()
         else:
             fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
             plt.close(fig)
@@ -1631,10 +1637,13 @@ class BicAn:
                     self.AxHands[1].axhline(f[k], color='red', linewidth=1.5)
                     self.AxHands[2].axvline(f[k], color='red', linewidth=1.5)
 
+            # Aha! This is the secret sauce!
+            self.Figure.canvas.draw()
+
             # 1 = MouseButton.LEFT
             # 3 = MouseButton.RIGHT
             if event.button==1:
-                self.PlotPointOut([Ix],[Iy]) if not self.CalcInstFreq else InstFreq(self,Ix,Iy,diff_freq=True,freq_type='hilbert',fband=self.SampRate/200,fwindow=self.SampRate/100)
+                self.PlotPointOut([Ix],[Iy]) if not self.InstFreqFlag else self.PlotInstFreq(Ix,Iy)
             elif event.button==3:
                 self.PlotPointOut([Ix],[Iy],PlotAll=True)
 
@@ -1677,7 +1686,7 @@ class BicAn:
         elif key == 'T':
             self.BicOfTime = not self.BicOfTime
         elif key == 'F':
-            self.CalcInstFreq = not self.CalcInstFreq
+            self.InstFreqFlag = not self.InstFreqFlag
         elif key == 'right':
             self.PlotSlice = 0 if self.PlotSlice is None else (self.PlotSlice + 10) % len(self.tv) 
         elif key == 'left':
@@ -1747,6 +1756,197 @@ class BicAn:
         return out
 
 
+    def InstDiffFreq(self,j,k,fband=1.0,dist='gauss',plot=True,err=False):
+    # ------------------
+    # Kind of like a beefed up GetBispec()
+    # ------------------
+        b2est,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,j=j,k=k)
+        dt = self.tv[1]-self.tv[0]
+        dBeta_dt = dphase_dt(Bi) / dt
+        d_dt_err = np.sqrt( 2 * (1/b2est - 1) / len(self.tv) ) / dt
+        amp = np.abs(Bi)
+
+        freq = dBeta_dt/(2*np.pi)
+        freq_err = d_dt_err / (2*np.pi)
+        amp = amp/np.max(amp)
+
+        # What distribution to use???
+        if dist=='gauss':
+            um = np.exp(-(freq/fband)**2) * amp
+        else: # Lorentzian
+            um = (1 + (freq/fband)**2 )**-1 * amp
+
+        if plot:
+            fig,ax = plt.subplots()
+
+            # ax.plot(freq,amp,'o')
+            # bic.PlotLabels(plt.gcf(),plt.gca(),[r'$\Delta f_{\rm inst}~{\rm [Hz]}$',r'$|\widetilde{\mathcal{B}}|~{\rm [arb.]}$'],grid=True,fsize=20)
+
+            if err:
+                ax.errorbar(freq/10**self.FScale,amp,xerr=freq_err,linestyle='',marker='.',markersize=2,capsize=2.0,ecolor='red',mec='C0')
+            else:
+                PlotTimeline(freq/10**self.FScale,amp,t=self.tv/10**self.TScale,fig=fig,ax=ax,cbar=r'$t\, [\rm{%ss}]$' % (ScaleToString(self.TScale)),cmap='twilight')
+            ax.set_xlim(-fband,fband)
+            ax.set_ylim(0,1)
+            
+            PlotLabels(fig,ax,[r'$\Delta f_{\rm inst}~{\rm [%sHz]}$' % (ScaleToString(self.FScale)),r'$|\widetilde{\mathcal{B}}|/|\widetilde{\mathcal{B}}|_{\rm max}$'])
+            plt.tight_layout()
+            # fig.savefig(specstr,dpi=q.PlotDPI,bbox_inches='tight')
+            # plt.close(fig)
+            plt.show()
+
+        return freq, amp, freq_err, um
+
+
+    def InstAmpFreq(self,j,calc_type='hilbert',fband=0,fwindow=0,realBPF=True):
+    # ------------------
+    # Perform instantaneous frequency analysis
+    # ------------------
+
+    # NEEDS FINISHED!!!
+        
+        f0 = self.SampRate     
+
+        fband = fS/200 if fband==0 else fband
+        fwindow = fS/100 if fwindow==0 else fwindow
+        
+        Nt = len(self.tv) if freq_type=='spectro' else len(self.Raw)
+        
+        if freq_type=='spectro':  
+            
+            t = self.tv/10**self.TScale
+            df = self.fv[1]-self.fv[0]
+            dt = self.tv[1]-self.tv[0]
+            
+            dum = self.sg[arr[n],:,0]
+            
+        elif freq_type in ['hilbert','zerocross']:
+            
+            dt = 1/self.SampRate
+            t = (self.TZero + np.arange(len(self.Raw)) * dt )/10**self.TScale
+            df = self.SampRate / len(self.Raw)
+            flim = self.fv[arr[n]]
+            if realBPF:
+                dum = ApplyRealBandpass(self.Raw[:,0],self.SampRate,flim,fband)
+            else:
+                dum = ApplyBandpass(self.Raw[:,0],df,flim,fband)
+            
+            if freq_type=='hilbert':
+                dum = hilbert(dum)
+            else:
+                loc,freq,T = InstFreqZeroCross(dum,dt=dt,Ninterp=len(dum)*10,T0=self.TZero)
+                # Interpolate for convenience!
+                freq = np.interp(t,T[loc]/10**self.TScale,freq)
+
+        elif freq_type in ['hilbert','zerocross']
+            _,Nf = arrmin( abs( f - maxLine ) )
+        
+            finst = 0*self.tv
+            for k in range(len(self.tv)):
+                _,m = arrmin( -abs(self.sg[Nf:,k,self.PlotSig]))
+                finst[k] = self.fv[Nf+m]
+
+            self.InstFreq = finst
+            ax.plot(t, finst / 10**self.FScale, color='gray')   
+       
+            if freq_type=='zerocross':
+                X[n,:] = freq
+            else:
+                X[n,:] = np.gradient( np.unwrap(np.angle(dum))) / dt
+
+
+    def PlotInstFreq(self,j,k,diff_freq=True,freq_type='hilbert',fband=0,fwindow=0,realBPF=True,SaveStr='',dWin=None):
+    # ------------------
+    # Perform instantaneous frequency analysis
+    # ------------------
+        
+        arr = [j,k,j+k]
+
+        fband = self.SampRate/200 if fband==0 else fband
+        fwindow = self.SampRate/100 if fwindow==0 else fwindow
+        
+        b2est,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,j=j,k=k)
+        
+        Nt = len(self.tv) if freq_type=='spectro' else len(self.Raw)
+        X = np.zeros( (3,Nt))
+        
+        for n in range(3):
+        
+            if freq_type=='spectro':  
+                
+                t = self.tv/10**self.TScale
+                df = self.fv[1]-self.fv[0]
+                dt = self.tv[1]-self.tv[0]
+                
+                dum = self.sg[arr[n],:,0]
+                
+            elif freq_type in ['hilbert','zerocross']:
+                
+                dt = 1/self.SampRate
+                t = (self.TZero + np.arange(len(self.Raw)) * dt )/10**self.TScale
+                df = self.SampRate / len(self.Raw)
+                flim = self.fv[arr[n]]
+                if realBPF:
+                    dum = ApplyRealBandpass(self.Raw[:,0],self.SampRate,flim,fband)
+                else:
+                    dum = ApplyBandpass(self.Raw[:,0],df,flim,fband)
+                
+                if freq_type=='hilbert':
+                    dum = hilbert(dum)
+                else:
+                    T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=len(dum)*10,T0=self.TZero)
+                    # Interpolate for convenience!
+                    freq = np.interp(t,T/10**self.TScale,freq)
+       
+            if freq_type=='zerocross':
+                X[n,:] = freq
+            else:
+                X[n,:] = np.gradient( np.unwrap(np.angle(dum))) / dt
+                
+        
+        A3 = np.abs(self.sg[j+k,:,0])
+        
+        fig,ax = plt.subplots()   
+        
+        if not diff_freq:
+            ax.plot( t, X[0,:]/(2*np.pi) - self.fv[j] )
+            ax.plot( t, X[1,:]/(2*np.pi) - self.fv[k] )
+            ax.plot( t, X[2,:]/(2*np.pi) - self.fv[j+k] )
+            
+            # Attempt at coupling coefficient
+            #ax.plot( t, ( Z/(2*np.pi) - self.fv[j+k] ) / (np.imag(Bi) / A3) )
+            
+            specstr = '%s_InstFreq.png' % SaveStr
+        else:
+            ax.plot( t, (X[0,:]+X[1,:]-X[2,:])/(2*np.pi))
+            
+            dBeta_dt = np.gradient( np.unwrap(np.angle(Bi))) / (self.tv[1]-self.tv[0])
+            ax.plot( self.tv/10**self.TScale, dBeta_dt/(2*np.pi) )
+
+            # Uncertainty as given in Fackrell
+            # For derivative, we have \sigma_f' = \sqrt(2) * sigma_f / dt
+            d_dt_err = np.sqrt( 2 * (1/b2est - 1) / len(self.tv) ) / (self.tv[1]-self.tv[0]) / (2*np.pi)
+            ax.fill_between( self.tv/10**self.TScale, dBeta_dt/(2*np.pi) - d_dt_err, dBeta_dt/(2*np.pi) + d_dt_err, color='C1', alpha=0.2)
+            
+            specstr = '%s_DiffFreq.png' % SaveStr
+            
+        ax.set_ylim(-fwindow,fwindow)
+        tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(self.TScale))
+        PlotLabels(fig,ax,[tstr,r'$\Delta f_{\rm inst}\,{\rm [Hz]}$'])  
+        
+        if dWin is not None:
+            ax.axvspan(dWin[0],dWin[1],color='cyan',alpha=0.2)
+        
+        plt.tight_layout()
+        if len(SaveStr)>0:
+            fig.savefig(specstr,dpi=self.PlotDPI,bbox_inches='tight')
+            plt.close(fig)
+        else:
+            plt.show()
+
+        return X
+
+
 # Module methods
 
 def FileDialog():
@@ -1760,6 +1960,54 @@ def FileDialog():
     # Ask the user to select a single file name
     ans = filedialog.askopenfilename(parent=root,initialdir=os.getcwd(),title="Please select a file:",filetypes=my_ftypes)  
     return ans
+
+
+def WhittakerShannon(x,Ninterp,fS=1.0,T0=0.0,interp='func'):
+# ------------------
+# Whittaker-Shannon interpolation
+# ------------------
+    N = len(x)
+    Tfinal = N/fS
+    T = np.linspace(0,Tfinal,Ninterp)
+    D = 0*T
+    dsinc = lambda t: t * (t==0) + (t!=0) * (t * np.cos(np.pi*t) - np.sin(np.pi*t)/np.pi ) / t**2
+    for k in range(N):
+        # D += fS*x[k]*dsinc(T*fS-k) if diff else x[k]*np.sinc(T*fS-k) 
+        if interp=='func':
+            D += x[k]*np.sinc(T*fS-k) 
+        elif interp=='diff':
+            D += fS*x[k]*dsinc(T*fS-k)
+        elif interp=='int':
+            si,_ = sici(np.pi * (T*fS-k))
+            D += x[k]*si / (np.pi*fS)
+
+    return T+T0,D
+
+
+def InstFreqZeroCross(x,dt=1.0,crossType='both',Ninterp=None,T0=0.0):
+# ------------------
+# Calculates instantaneous frequency from zero crossings
+# ------------------
+    T = T0 + np.arange(len(x))*dt
+    if Ninterp is not None:
+        T,x = WhittakerShannon(x,Ninterp,fS=1/dt,T0=T0)
+        dt=T[1]-T[0]
+
+    if crossType in ['pos2neg','both']:
+        pos = x > 0
+        p = (pos[:-1] & ~pos[1:]).nonzero()[0]
+        fp = (dt * np.diff(p)) ** -1
+        loc_pos = (p[1:] + p[:-1])//2
+    if crossType in ['neg2pos','both']:
+        neg = x < 0
+        n = (neg[:-1] & ~neg[1:]).nonzero()[0]
+        fn = (dt * np.diff(n)) ** -1
+        loc_neg = (n[1:] + n[:-1])//2
+    loc = np.concatenate((loc_pos,loc_neg))
+    freq = np.concatenate((fp,fn))
+
+    lsort = np.argsort(loc)
+    return T[np.sort(loc)], freq[lsort] # np.sort(loc)
 
 
 def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True):
@@ -2364,85 +2612,6 @@ def HannWindow(N,q=2):
     return win
 
 
-def InstFreq(q,j,k,diff_freq=False,freq_type='spectro',fband=5000,fwindow=10000,realBPF=True,SaveStr='',dWin=None):
-    # Perform instantaneous freq analysis
-    # \omega(t) = d\phi/dt, where \phi is instantaneous phase
-    
-    arr = [j,k,j+k]
-    
-    b2est,_,Bi = GetBispec(q.sg,q.BicVec,q.LilGuy,j=j,k=k)
-    
-    Nt = len(q.tv) if freq_type=='spectro' else len(q.Raw)
-    X = np.zeros( (3,Nt))
-    
-    for n in range(3):
-    
-        if freq_type=='spectro':  
-            
-            t = q.tv/10**q.TScale
-            df = q.fv[1]-q.fv[0]
-            dt = q.tv[1]-q.tv[0]
-            
-            dum = q.sg[arr[n],:,0]
-            
-        elif freq_type=='hilbert':
-            
-            dt = 1/q.SampRate
-            t = (q.TZero + np.arange(len(q.Raw)) * dt )/10**q.TScale
-            df = q.SampRate / len(q.Raw)
-            flim = q.fv[arr[n]]
-            if realBPF:
-                dum = ApplyRealBandpass(q.Raw[:,0],q.SampRate,flim,fband)
-            else:
-                dum = ApplyBandpass(q.Raw[:,0],df,flim,fband)
-            dum = hilbert(dum)
-               
-        X[n,:] = np.gradient( np.unwrap(np.angle(dum))) / dt
-            
-    
-    A3 = np.abs(q.sg[j+k,:,0])
-    
-    fig,ax = plt.subplots()   
-    
-    if not diff_freq:
-        ax.plot( t, X[0,:]/(2*np.pi) - q.fv[j] )
-        ax.plot( t, X[1,:]/(2*np.pi) - q.fv[k] )
-        ax.plot( t, X[2,:]/(2*np.pi) - q.fv[j+k] )
-        
-        # Attempt at coupling coefficient
-        #ax.plot( t, ( Z/(2*np.pi) - q.fv[j+k] ) / (np.imag(Bi) / A3) )
-        
-        specstr = '%s_InstFreq.png' % SaveStr
-    else:
-        ax.plot( t, (X[0,:]+X[1,:]-X[2,:])/(2*np.pi) )
-        
-        dBeta_dt = np.gradient( np.unwrap(np.angle(Bi))) / (q.tv[1]-q.tv[0])
-        ax.plot( q.tv/10**q.TScale, dBeta_dt/(2*np.pi) )
-
-        # Uncertainty as given in Fackrell
-        # For derivative, we have \sigma_f' = \sqrt(2) * sigma_f / dt
-        d_dt_err = np.sqrt( 2 * (1/b2est - 1) / len(q.tv) ) / (q.tv[1]-q.tv[0]) / (2*np.pi)
-        ax.fill_between( q.tv/10**q.TScale, dBeta_dt/(2*np.pi) - d_dt_err, dBeta_dt/(2*np.pi) + d_dt_err, color='C1', alpha=0.2)
-        
-        specstr = '%s_DiffFreq.png' % SaveStr
-        
-    ax.set_ylim(-fwindow,fwindow)
-    tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(q.TScale))
-    PlotLabels(fig,ax,[tstr,r'$\Delta f_{\rm inst}\,{\rm [Hz]}$'])  
-    
-    if dWin is not None:
-        ax.axvspan(dWin[0],dWin[1],color='cyan',alpha=0.2)
-    
-    plt.tight_layout()
-    if len(SaveStr)>0:
-        fig.savefig(specstr,dpi=q.PlotDPI,bbox_inches='tight')
-        plt.close(fig)
-    else:
-        plt.show()
-
-    return
-
-
 def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
 # ------------------
 # Applies quick & dirty bandpass with brickwall
@@ -2572,11 +2741,17 @@ def RunDemo():
 
 def arrmin(arr):
 # ------------------
-# Matlab-esque min()
+# Matlab-esque min() // Lol dude use np.argmin()
 # ------------------   
     m = min(arr)
     index = arr.tolist().index( m )
     return m,index
+
+def dphase_dt(z):
+# ------------------
+# Returns gradient of unwrapped phase lol
+# ------------------ 
+    return np.gradient( np.unwrap(np.angle(z)))
 
 
 def bin_mat(n):
