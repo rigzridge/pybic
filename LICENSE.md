@@ -1,6 +1,6 @@
 # License (adapted from OLC-3)
 
-Copyright 2022-2023 G. Riggs & T. Matheny
+Copyright 2022-2024 G. Riggs & T. Matheny
 
 Redistribution and use, with or without modification, 
 of the software and associated documentation files (the "Software") 
