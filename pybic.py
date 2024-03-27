@@ -773,7 +773,6 @@ class BicAn:
     # ------------------       
         dum = self.sg 
         if self.SpecType == 'wave' and not self.CalcCOI:
-            #WTrim = 50*2
             WTrim = len(self.tv) // 10
             dum = self.sg[:,WTrim:-WTrim,:] 
         if self._Nseries==1:
@@ -798,7 +797,7 @@ class BicAn:
     # ------------------       
         dum = self.sg 
         if self.SpecType == 'wave' and not self.CalcCOI:
-            WTrim = 50*2
+            WTrim = len(self.tv) // 10
             dum = self.sg[:,WTrim:-WTrim,:] 
         if self._Nseries==1:
             self.BicVec = [0, 0, 0, 0]
@@ -1805,14 +1804,14 @@ class BicAn:
 
     # NEEDS FINISHED!!!
         
-        f0 = self.SampRate     
+        f0 = self.fv[j]     
 
-        fband = fS/200 if fband==0 else fband
-        fwindow = fS/100 if fwindow==0 else fwindow
+        fband = self.SampRate/200 if fband==0 else fband
+        fwindow = self.SampRate/100 if fwindow==0 else fwindow
         
-        Nt = len(self.tv) if freq_type=='spectro' else len(self.Raw)
+        Nt = len(self.tv) if calc_type=='spectro' else len(self.Processed)
         
-        if freq_type=='spectro':  
+        if calc_type=='spectro':  
             
             t = self.tv/10**self.TScale
             df = self.fv[1]-self.fv[0]
@@ -1820,39 +1819,38 @@ class BicAn:
             
             dum = self.sg[arr[n],:,0]
             
-        elif freq_type in ['hilbert','zerocross']:
+        elif calc_type in ['hilbert','zerocross']:
             
             dt = 1/self.SampRate
-            t = (self.TZero + np.arange(len(self.Raw)) * dt )/10**self.TScale
-            df = self.SampRate / len(self.Raw)
+            t = (self.TZero + np.arange(len(self.Processed)) * dt )/10**self.TScale
+            df = self.SampRate / len(self.Processed)
             flim = self.fv[arr[n]]
             if realBPF:
-                dum = ApplyRealBandpass(self.Raw[:,0],self.SampRate,flim,fband)
+                dum = ApplyRealBandpass(self.Processed[:,0],self.SampRate,flim,fband)
             else:
-                dum = ApplyBandpass(self.Raw[:,0],df,flim,fband)
+                dum = ApplyBandpass(self.Processed[:,0],df,flim,fband)
             
-            if freq_type=='hilbert':
+            if calc_type=='hilbert':
                 dum = hilbert(dum)
             else:
-                loc,freq,T = InstFreqZeroCross(dum,dt=dt,Ninterp=len(dum)*10,T0=self.TZero)
+                Ninterp = None if fS/f0 > 10 else np.ceil(10*len(dum)*f0/fS)
+                print('Using...')
+                T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=Ninterp,T0=self.TZero)
                 # Interpolate for convenience!
-                freq = np.interp(t,T[loc]/10**self.TScale,freq)
+                freq = np.interp(t,T/10**self.TScale,freq)
 
-        elif freq_type in ['hilbert','zerocross']
+        elif calc_type=='peak':
             _,Nf = arrmin( abs( f - maxLine ) )
         
             finst = 0*self.tv
             for k in range(len(self.tv)):
                 _,m = arrmin( -abs(self.sg[Nf:,k,self.PlotSig]))
-                finst[k] = self.fv[Nf+m]
-
-            self.InstFreq = finst
-            ax.plot(t, finst / 10**self.FScale, color='gray')   
+                finst[k] = self.fv[Nf+m]  
        
-            if freq_type=='zerocross':
-                X[n,:] = freq
-            else:
-                X[n,:] = np.gradient( np.unwrap(np.angle(dum))) / dt
+        if calc_type!='zerocross':
+            amp = 0
+            freq = np.gradient( np.unwrap(np.angle(dum))) / dt
+        return amp, freq, t
 
 
     def PlotInstFreq(self,j,k,diff_freq=True,freq_type='hilbert',fband=0,fwindow=0,realBPF=True,SaveStr='',dWin=None):
