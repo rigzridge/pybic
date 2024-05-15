@@ -61,6 +61,11 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 4/24/2024 -> Fixed time vector (self.tv) output for STFT [accounting for
+# subint/samprate/2 displacement due to windowing]
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 4/24/2024 -> Testing flattop window and control of GetBispec(...) phase
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 3/20/2024 -> Added WhittakerShannon() for interpolation, debugged beta 
 # version of InstFreqZeroCross() and InstDiffFreq()
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -370,6 +375,7 @@ class BicAn:
     LilGuy    = 1e-6
     SizeWarn  = True
     BicVec    = [0,0,0]
+    RandLevel = 1.0
 
     PlotIt    = True
     CMap      = 'viridis'
@@ -379,7 +385,7 @@ class BicAn:
     TickLabel = 'normal'
     TLineCol  = 'twilight'
     LineWidth = 2
-    FontSize  = 20
+    FontSize  = 14
     PlotDPI   = 150
     SpecVLim  = []
     NormBic   = False
@@ -938,7 +944,7 @@ class BicAn:
             ax.semilogy(f, dum[:,k], linewidth=self.LineWidth, color=self.LineColor[(50+40*k) % 256])
 
         fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        ystr = r'$\langle|%s(f)|^2\rangle\,\mathrm{[arb.]}$' % ('X' if self.SpecType=='stft' else r'\mathcal{W}')
+        ystr = r'$\langle|%s(f)|^2\rangle\,\mathrm{[arb.]}$' % (r'\mathcal{X}' if self.SpecType=='stft' else r'\mathcal{W}')
         PlotLabels(fig,ax,[fstr,ystr],self.FontSize,self.CbarNorth)
         ax.set_xlim(f[0], f[-1])
         if len(vLim)==2:
@@ -964,7 +970,7 @@ class BicAn:
 
         tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(self.TScale))
         fstr = r'$f\,\, [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        cbarstr = r'$\log_{10}|%s(t,f)|^2$' % ('X' if self.SpecType=='stft' else r'\mathcal{W}')
+        cbarstr = r'$\log_{10}|%s(t,f)|^2$' % (r'\mathcal{X}' if self.SpecType=='stft' else r'\mathcal{W}')
 
         t = self.tv/10**self.TScale
         f = self.fv/10**self.FScale
@@ -1263,7 +1269,7 @@ class BicAn:
                 dum = self.sg
             for k in range(Ntrials):
                 LoadBar(k,Ntrials)
-                g[k],_,_ = GetBispec(dum,self.BicVec,self.LilGuy,Y[0],X[0],True)
+                g[k],_,_ = GetBispec(dum,self.BicVec,self.LilGuy,Y[0],X[0],self.RandLevel)
             print('\b\b^]\n')  
 
             # Limit b^2, create vector, and produce histogram 
@@ -1289,7 +1295,7 @@ class BicAn:
             # This should be chi-squared in general....
             # from scipy.special import gamma
             # X2 = lambda x,nu: x**(nu/2-1) * np.exp(-x/2) / ( 2**(nu/2) * gamma(nu/2) )
-            print('nu = ',2 * m**2/np.var(g))
+            print('m = %f\nvar = %f\nnu = %f' % (m,np.var(g),2 * m**2/np.var(g)) )
 
             b2crit = -m*np.log(1 - cVal)
             b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
@@ -2309,7 +2315,7 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
     for m in range(M):
         LoadBar(m,M)
 
-        time_vec[m] = t0 + m*step/samprate
+        time_vec[m] = t0 + (m*step+subint//2)/samprate
         for k in range(N):
             Ym = sig[m*step : m*step + subint, k] # Select subinterval    
             # Removing this b/c it negates the point of nfreq
@@ -2327,11 +2333,11 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
             err[m,k] = sum(dumft)/len(dumft)     # Mean of PSD slice
 
             if err[m,k]>=errlim:
-                fft_coeffs[:,k] = 0*fft_coeffs[:,k] # Blank if mean excessive
+                # Keep blank if mean excessive
                 Ntoss += 1
-
-            afft[:,k]  += dumft                  # Welch's PSD
-            spec[:,m,k] = fft_coeffs[:,k]        # Build spectrogram
+            else:
+                afft[:,k]  += dumft              # Welch's PSD
+                spec[:,m,k] = fft_coeffs[:,k]    # Build spectrogram
 
     print('\b\b\b^]\n')
     
@@ -2542,10 +2548,16 @@ def GetBispec(spec,v=[0,0,0],lilguy=1e-6,j=0,k=0,rando=False):
     p2 = np.real( spec[abs(j),:,v[1]] ) + 1j*np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
     s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
 
-    if rando:
-        p1 = abs(p1)*np.exp( 2j*np.pi* (2*np.random.random( p1.shape ) - 1) )
-        p2 = abs(p2)*np.exp( 2j*np.pi* (2*np.random.random( p2.shape ) - 1) )
-        s  = abs(s)* np.exp( 2j*np.pi* (2*np.random.random( s.shape  ) - 1) )
+    if rando>0:
+        # Old way ~> which is redundant anyway, right? using uniform [-1,1] * 2pi?
+        # p1 = abs(p1)*np.exp( 2j*np.pi* (2*np.random.random( p1.shape ) - 1) )
+        # p2 = abs(p2)*np.exp( 2j*np.pi* (2*np.random.random( p2.shape ) - 1) )
+        # s  = abs(s)* np.exp( 2j*np.pi* (2*np.random.random( s.shape  ) - 1) )
+
+        w = 1.0 if isinstance(rando,bool) else rando
+        p1 = abs(p1)*np.exp( 1j* ( np.angle(p1) + w*2*np.pi*np.random.random( p1.shape )  ) )
+        p2 = abs(p2)*np.exp( 1j* ( np.angle(p2) + w*2*np.pi*np.random.random( p2.shape )  ) )
+        s  = abs(s)* np.exp( 1j* ( np.angle(s) + w*2*np.pi*np.random.random( s.shape  )  ) )
 
     Bi  = p1*p2*np.conj(s)
     e12 = abs(p1*p2)**2
@@ -2607,6 +2619,10 @@ def HannWindow(N,q=2):
 # Hann window
 # ------------------
     win = (np.sin(np.pi*np.arange(N)/(N-1)))**q
+
+    # Flat-top window
+    s = 2*np.pi*np.arange(N)/(N-1)
+    win = 0.22 - 0.42*np.cos(s) + 0.28*np.cos(2*s) - 0.08*np.cos(3*s) + 0.01*np.cos(4*s)
     return win
 
 
