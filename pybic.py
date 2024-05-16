@@ -61,6 +61,8 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 5/15/2024 -> Fixed PlotTrispec() drawing of max value
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 4/24/2024 -> Fixed time vector (self.tv) output for STFT [accounting for
 # subint/samprate/2 displacement due to windowing]
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1136,16 +1138,23 @@ class BicAn:
         # cax = divider.append_axes(cbarloc, size='5%', pad=0.05)
         #fig.colorbar(im,ax=ax,shrink=0.75)
 
+        # Find maximum
+        max_ind = np.unravel_index(np.argmax(self.tc),self.tc.shape)
+        print('@ (fx,fy,fz) = ',f[max_ind[1]],f[max_ind[0]],f[max_ind[2]])
         # "Paint axes"
-        # plt.plot([0 f(x)],[0 0],[0 0],'-r',lw=1.25)
-        # plt.plot([0 0],[0 f(y)],[0 0],'-b',lw=1.25)
-        # plt.plot([0 0],[f(lim2) f(lim2)],[0 f(z)],'-g',lw=1.25)
-        
-        # plt.plot([f(x) f(x)],[f(y) f(lim2)],[f(z) f(z)],'-bo',lw=1.25)
-        # plt.plot([f(x) f(x)],[f(y) f(y)],[0 f(z)],'-go',lw=1.25)
-        # plt.plot([f(x) f(lim)],[f(y) f(y)],[f(z) f(z)],'-ro',lw=1.25)
+        fx = f[max_ind[1]]
+        fy = f[max_ind[0]]
+        fz = f[max_ind[2]]
 
-        DrawSimplex(f[-1])
+        plt.plot([fx,fx], [fy,f[lim2]], [fz,fz],'-g.',lw=1.25)
+        plt.plot([fx,fx], [fy,fy], [0,fz],'-b.',lw=1.25)
+        plt.plot([0,fx], [fy,fy],[fz,fz],'-r.',lw=1.25)
+
+        bic.DrawSimplex(f[-1])
+
+        plt.plot([0,fx],[0,0],[0,0],'-r',lw=1.25)
+        plt.plot([0,0],[0,fy],[0,0],'-g',lw=1.25)
+        plt.plot([0,0],[0,0],[0,fz],'-b',lw=1.25)
         
         plt.tight_layout()
         plt.show()
