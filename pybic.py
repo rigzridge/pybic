@@ -1150,7 +1150,7 @@ class BicAn:
         plt.plot([fx,fx], [fy,fy], [0,fz],'-b.',lw=1.25)
         plt.plot([0,fx], [fy,fy],[fz,fz],'-r.',lw=1.25)
 
-        bic.DrawSimplex(f[-1])
+        DrawSimplex(f[-1])
 
         plt.plot([0,fx],[0,0],[0,0],'-r',lw=1.25)
         plt.plot([0,0],[0,fy],[0,0],'-g',lw=1.25)
