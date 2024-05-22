@@ -1100,7 +1100,7 @@ class BicAn:
         return      
 
 
-    def PlotTrispec(self,Tval=0.5,colorTricoh=True,elev=26,azim=-56,roll=0,squeezeAxes=True):
+    def PlotTrispec(self,Tval=0.5,colorTricoh=True,elev=26,azim=-56,roll=0,shrink=0.7,squeezeAxes=True):
     # ------------------
     # Plot trispectrum
     # ------------------
@@ -1156,7 +1156,7 @@ class BicAn:
         fstr1 = r'$f_1\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         fstr2 = r'$f_2\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         fstr3 = r'$f_3\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        cax = PlotLabels(fig,ax,[fstr1,fstr2,fstr3,cbarstr],self.FontSize,self.CbarNorth,im,None)
+        cax = PlotLabels(fig,ax,[fstr1,fstr2,fstr3,cbarstr],self.FontSize,self.CbarNorth,im,None,shrink=shrink)
 
         # divider = make_axes_locatable(ax)
         # cbarloc = 'top' if self.CbarNorth else 'right'
@@ -2051,7 +2051,7 @@ def InstFreqZeroCross(x,dt=1.0,crossType='both',Ninterp=None,T0=0.0):
     return T[np.sort(loc)], freq[lsort] # np.sort(loc)
 
 
-def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True):
+def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True,shrink=0.7):
 # ------------------
 # Convenience function
 # ------------------
@@ -2095,7 +2095,7 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         ax.zaxis.set_rotate_label(False)  # disable automatic rotation
         ax.set_zlabel(strings[2], fontsize=fsize, fontweight=fweight, rotation=90)
 
-        cbar = fig.colorbar(im,cax=None,ax=ax,shrink=0.65,orientation='horizontal')
+        cbar = fig.colorbar(im,cax=None,ax=ax,shrink=shrink,orientation='horizontal')
 
         # cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
         cbar.ax.set_xlabel(strings[3], fontsize=fsize, fontweight=fweight)
