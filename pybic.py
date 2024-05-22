@@ -28,38 +28,56 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # additional options... (see below for instructions)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# autoscale -> autoscaling in figures                  [default :: False]
+# alphaexp  -> prefactor exponent for CWT              [default :: 0.5]
+# autoscale -> autoscaling in figures                 x[default :: False]
+# bicoftime -> updates bicoherence in PlotGUI          [default :: False]
 # bispectro -> computes bispectrogram                 x[default :: False]
-# calccoi   -> cone of influence                       [default :: False]
+# calccoi   -> estimate cone of influence (COI)        [default :: False]
 # cbarnorth -> control colorbar location               [default :: True]
+# coilim    -> cone of influence decay criterion       [default :: -3.0]
 # cmap      -> adjust colormap                         [default :: 'viridis']
 # dealias   -> apply antialiasing (LP) filter         x[default :: False]
 # detrend   -> remove linear trend from data           [default :: False]
 # errlim    -> mean(fft) condition                     [default :: 1e15] 
 # filter    -> apply band-pass filter                 x[default :: 'none']
+# fontsize  -> figure label font size                  [default :: 14]
 # freqres   -> desired frequency resolution [Hz]       [default :: 0]
 # fscale    -> scale for plotting frequencies          [default :: 0]
+# incoi     -> precalculated cone of influence         [default :: np.array([])]
+# instfreqflag -> GUI click plots inst. freq.          [default :: False]
 # justspec  -> true for just spectrogram               [default :: False]
 # lilguy    -> set epsilon                             [default :: 1e-6]
-# limfreq   -> limits fourier bins to nyq/limfreq      [default :: 2]
+# limfreq   -> limits fourier bins to nyq/limfreq      [default :: 2.0]
+# normbic   -> normalize bicoherence plots to [0,1]    [default :: False]
 # note      -> optional string for documentation       [default :: ' '] 
+# plotdpi   -> figure dots per inch (DPI)              [default :: 150]
 # plotit    -> start plotting tool when done           [default :: False]
+# plotsig   -> select channel in spectrogram           [default :: 0]
+# plotslice -> select subinterval for plotting         [default :: None]
 # plottype  -> set desired plottable                   [default :: 'bicoh']
-# samprate  -> sampling rate in Hz                     [default :: 1]
+# randlevel -> sets phase random for uncert. quant.    [default :: 1.0]
+# samprate  -> sampling rate in Hz                     [default :: 1.0]
 # sigma     -> parameter for wavelet spectrum          [default :: 0]
 # spectype  -> set desired time-freq. method           [default :: 'stft']
 # step      -> step size for Welch method in samples   [default :: 512]
 # subint    -> subinterval size in samples             [default :: 128]
-# sizewarn  -> warning for matrix size                x[default :: True]
+# sizewarn  -> warning for matrix size                 [default :: True]
 # smooth    -> smooths FFT by n samples               x[default :: 1]
+# tlinecol  -> colormap for timeline plots             [default :: 'twilight']
 # trispec   -> estimates trispectrum                   [default :: False]
 # tscale    -> scale for plotting time                 [default :: 0]
-# tzero     -> initial time                            [default :: 0]
+# tzero     -> initial time                            [default :: 0.0]
 # verbose   -> allow printing of info structure        [default :: False]
-# window    -> select window function                 x[default :: 'hann']
+# window    -> select window function                  [default :: 'hann']
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 5/16/2024 -> Added 'inst_freq_test' test signal and fixed CheckCouple();
+# PlotTrispec() now outputs coordinates of maximum, finally moved colorbar
+# from right side to bottom (why not top???); changes to PlotLabels() for
+# 3D plots eliminates tough-to-read labels, etc.; fixed issue with window
+# function support! Now includes 'hann', 'flat', 'rect', and 'sine'
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 5/15/2024 -> Fixed PlotTrispec() drawing of max value
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -534,7 +552,7 @@ class BicAn:
                 siglist = ['demo','classic','tone','noisy','2tone','3tone','4tone',
                             'line','circle','fast_circle','quad_couple','d3dtest','cube_couple',
                             'coherence','cross_2tone','cross_3tone','cross_circle','amtest','quad_couple_circle',
-                            'quad_couple_circle2',
+                            'quad_couple_circle2','inst_freq_test',
                             '3tone_short','circle_oversample','cross_3tone_short','helix']
                 if instr == 'input':
                     # Start getfile prompt
@@ -706,7 +724,7 @@ class BicAn:
         if self.NFreq>self._WarnSize and self.SizeWarn:
             self.SizeWarnPrompt(self.NFreq)
 
-        spec,afft,f,t,err,Ntoss = ApplySTFT(self.Processed,self.SampRate,self.SubInt,self.Step,self.NFreq,self.TZero,self.Detrend,self.ErrLim)
+        spec,afft,f,t,err,Ntoss = ApplySTFT(self.Processed,self.SampRate,self.SubInt,self.Step,self.NFreq,self.TZero,self.Detrend,self.ErrLim,self.Window)
         
         self.tv = t
         self.fv = f
@@ -1082,7 +1100,7 @@ class BicAn:
         return      
 
 
-    def PlotTrispec(self,Tval=0.5,colorTricoh=True):
+    def PlotTrispec(self,Tval=0.5,colorTricoh=True,elev=26,azim=-56,roll=0,squeezeAxes=True):
     # ------------------
     # Plot trispectrum
     # ------------------
@@ -1114,13 +1132,20 @@ class BicAn:
         #fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
         fig = plt.figure(dpi=self.PlotDPI)
         ax = fig.add_subplot(111, projection='3d')
-        im = ax.scatter(x[q],y[q],z[q],c=dum,cmap=self.CMap,alpha=0.5)
+        im = ax.scatter(x[q],y[q],z[q],c=dum,cmap=self.CMap,alpha=0.5,marker='o')
+
+        ax.view_init(elev=elev, azim=azim, roll=roll)
 
         #isosurface(f(1:lim),f(1:lim2),f(1:lim3),bic.tc,Tval,angle(bic.ts))
 
-        ax.set_xlim(0,f[-1]) 
-        ax.set_ylim(0,f[-1]/2)
-        ax.set_zlim(0,f[-1]/3)
+        if squeezeAxes:
+            ax.set_xlim(0,f[-1]) 
+            ax.set_ylim(0,f[-1]/2)
+            ax.set_zlim(0,f[-1]/3)
+        else:
+            ax.set_xlim(0,f[-1]) 
+            ax.set_ylim(0,f[-1])
+            ax.set_zlim(0,f[-1])
         
         # d = {['Max::' num2str(max_t)];...
         #     ['Current::' num2str(Tval)]};
@@ -1146,7 +1171,8 @@ class BicAn:
         fy = f[max_ind[0]]
         fz = f[max_ind[2]]
 
-        plt.plot([fx,fx], [fy,f[lim2]], [fz,fz],'-g.',lw=1.25)
+        greenLim = lim2 if squeezeAxes else -1
+        plt.plot([fx,fx], [fy,f[greenLim]], [fz,fz],'-g.',lw=1.25)
         plt.plot([fx,fx], [fy,fy], [0,fz],'-b.',lw=1.25)
         plt.plot([0,fx], [fy,fy],[fz,fz],'-r.',lw=1.25)
 
@@ -1159,7 +1185,7 @@ class BicAn:
         plt.tight_layout()
         plt.show()
         
-        return
+        return [max_ind[1],max_ind[0],max_ind[2]]
 
 
     def WhichPlot(self,local=None):
@@ -1752,7 +1778,7 @@ class BicAn:
         return
 
 
-    def CheckCouple(self,f):
+    def CheckCouple(self,f,calcsum=False):
     # ------------------
     # For a given test vector of freqs, check nth order coupling
     # ------------------
@@ -1764,6 +1790,8 @@ class BicAn:
         out = np.zeros(L)
         for k in range(L):
             dum = f * mask[k,:]
+            if calcsum:
+                dum[0] = f[0] + np.sum(-dum[1::])
             out[k],_,_ = GetPolySpec(self.sg,dum,self.LilGuy)
             print(dum,'~>',out[k])
         print('Mean is ',np.mean(out))
@@ -2062,21 +2090,24 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         if cbarweight=='ticks':
             labels += cax.get_xticklabels()
             labels += cax.get_yticklabels()
-    if n==4: # Must be trispectrum
+    if n==4: # Must be trispectrum (or 3D plot)
 
         ax.zaxis.set_rotate_label(False)  # disable automatic rotation
         ax.set_zlabel(strings[2], fontsize=fsize, fontweight=fweight, rotation=90)
-        cbar = fig.colorbar(im,cax=None,ax=ax,shrink=0.75,label=strings[3])
 
-        cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
+        cbar = fig.colorbar(im,cax=None,ax=ax,shrink=0.65,orientation='horizontal')
+
+        # cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
+        cbar.ax.set_xlabel(strings[3], fontsize=fsize, fontweight=fweight)
         cbar.ax.tick_params(labelsize=3*fsize/4)
 
-        ###labels += ax.get_zticklabels()
-        labels += cbar.ax.get_xticklabels()
-        labels += cbar.ax.get_yticklabels()
+        labels += ax.get_zticklabels()
+        # labels += cbar.ax.get_xticklabels()
+        # labels += cbar.ax.get_yticklabels()
 
     ax.tick_params(labelsize=9*fsize/10)
-    ax.minorticks_on()
+    if n<4:
+        ax.minorticks_on()
 
     # Append ticklabels
     labels += ax.get_xticklabels()
@@ -2298,13 +2329,31 @@ def TestSignal(whatsig):
         u = np.sin( 2*np.pi*(fx*t + fy*t + fz*t + dfx + dfy + dfz) + phi) # f1 + f2
 
         inData = x + y + z + u + noisy*(0.5*np.random.random(len(t)) - 1)
+    elif dum == 'inst_freq_test':
+        fS = 500
+        t = np.arange(0,1,1/fS)
+        Ffin = fS/2
+        y = np.sin(2*np.pi * Ffin * t**3 / 3 )
+
+        fx = 100
+        Ff = 10
+        Afx = 5
+        dfx = Afx*np.sin(2*np.pi*t*Ff) / (2*np.pi*Ff)
+
+        y_int = fx + Afx*np.cos(2*np.pi*t*Ff)
+        y_int = np.concatenate((y_int,Ffin * t**2))
+
+        y = np.concatenate((np.sin(2*np.pi*(fx*t + dfx)), y))
+        t = np.concatenate((t, t+t[-1]))
+
+        inData = y + 0.5*noisy*(np.random.random(len(t)) - 1)
     else:
         print('***WARNING*** :: "{}" test signal unknown... Using single tone..'.format(whatsig)) 
         inData,t,fS = SignalGen(fS,tend,1,22,0,0,0,0,0,0,0)
     return inData,t,float(fS)
 
 
-def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,errlim=1e15):
+def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,errlim=1e15,window='hann'):
 # ------------------
 # STFT static method
 # ------------------
@@ -2318,7 +2367,15 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
     afft = np.zeros((lim,N))        # Coeffs for slice
     Ntoss = 0                       # Number of removed slices
     
-    win = HannWindow(subint)        # Apply Hann window
+    # Apply window
+    if window == 'flat':
+        win = FlatTopWindow(subint) 
+    elif window == 'rect':
+        win = HannWindow(subint,q=0) 
+    elif window == 'sine':
+        win = HannWindow(subint,q=1) 
+    else: # Must be Hann!
+        win = HannWindow(subint,q=2)        
     
     print('Applying STFT...      ')
     for m in range(M):
@@ -2627,12 +2684,15 @@ def HannWindow(N,q=2):
 # ------------------
 # Hann window
 # ------------------
-    win = (np.sin(np.pi*np.arange(N)/(N-1)))**q
+    return (np.sin(np.pi*np.arange(N)/(N-1)))**q
+    
 
-    # Flat-top window
+def FlatTopWindow(N):
+# ------------------
+# Flat-top window
+# ------------------
     s = 2*np.pi*np.arange(N)/(N-1)
-    win = 0.22 - 0.42*np.cos(s) + 0.28*np.cos(2*s) - 0.08*np.cos(3*s) + 0.01*np.cos(4*s)
-    return win
+    return 0.22 - 0.42*np.cos(s) + 0.28*np.cos(2*s) - 0.08*np.cos(3*s) + 0.01*np.cos(4*s)
 
 
 def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
@@ -2660,6 +2720,9 @@ def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
 
 
 def ApplyBandpass(D,df,flim,fband):
+# ------------------
+# Crude, brickwall bandpass
+# ------------------
     fftD = np.fft.fft(D)
 
     # Bandpass
@@ -2674,7 +2737,9 @@ def ApplyBandpass(D,df,flim,fband):
 
 
 def ApplyRealBandpass(D,fS,flim,fband,order=5):
-
+# ------------------
+# Butterworth bandpass
+# ------------------
     lo = flim - fband
     hi = flim + fband
     
@@ -2761,7 +2826,6 @@ def RunDemo():
     b = BicAn('circle')
     return b
 
-
 def arrmin(arr):
 # ------------------
 # Matlab-esque min() // Lol dude use np.argmin()
@@ -2776,18 +2840,15 @@ def dphase_dt(z):
 # ------------------ 
     return np.gradient( np.unwrap(np.angle(z)))
 
-
 def bin_mat(n):
   # Creates matrix of ...
   dum = ((np.arange(2**(n-1),2**n).reshape(-1,1) & (2**np.arange(n))) != 0).astype(int)[:,::-1]
   dum[dum==0] = -1
   return dum
 
-
 def diff_to_sum_vec(v):
   v[0] = sum(v)
   return v
-
 
 def nRandSumLessThanUnity(n):
 # ------------------
@@ -2803,7 +2864,6 @@ def nRandSumLessThanUnity(n):
             dum.sort()
             dum = dum[::-1]
             return dum
-
 
 def DrawSimplex(flim):
 # ------------------
