@@ -14,6 +14,8 @@ b = bic.BicAn(x,samprate=fS)
 ```
 _More to come! Keep an eye out for our upcoming publication!_
 
+[Link to tutorial notebook](https://colab.research.google.com/drive/1GnJddGDVVIWK44B-_0Mfoe-tLKWoXFrb?usp=sharing)
+
 ## Theory
 
 ### The bispectrum
