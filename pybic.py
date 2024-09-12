@@ -73,6 +73,18 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 8/16/2024 -> Fixes to PlotInstFreq() [factor of 2pi for zero-cross, ...]
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 6/17/2024 -> ClickPlot() now autos to CheckNeighbors=True, overplotted red
+# lines use alpha=0.5
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 6/13/2024 -> Added PlotCoherence() class method; setting InstFreqFlag to 
+# "True" (SHIFT+F in PlotGUI...) now allows f_inst vs. t [left click] AND
+# |B|/|B|_max vs. \Delta f_inst (ie, inst. diff. freq. vs. amp) [right click];
+# TestSignal() now takes inputs for f_samp, t_end, etc.
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 5/23/2024 -> CheckCouple() output enhanced, added "checkdiff" flag
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 5/16/2024 -> Added 'inst_freq_test' test signal and fixed CheckCouple();
 # PlotTrispec() now outputs coordinates of maximum, finally moved colorbar
 # from right side to bottom (why not top???); changes to PlotLabels() for
@@ -392,6 +404,7 @@ class BicAn:
     TScale    = 0
     Filter    = 'none' 
     Smooth    = 1  
+    Epsilon   = 1e-6
     LilGuy    = 1e-6
     SizeWarn  = True
     BicVec    = [0,0,0]
@@ -499,8 +512,14 @@ class BicAn:
             self.__dict__[attr] = val
 
             if attr=='SubInt':
+                # If SubInt is changed, the frequency resolution needs updated!
                 self.FreqRes = self.MaxRes
                 print('***NOTE*** :: Resolution set to maximum!')
+
+            if attr=='Epsilon':
+                self.LilGuy = val
+            if attr=='LilGuy':
+                self.Epsilon = val
   
         return
 
@@ -976,6 +995,37 @@ class BicAn:
         return
 
 
+    def PlotCoherence(self,*args,crossSpec=False,vLim=[]):
+    # ------------------
+    # Plot cross-coh, etc.
+    # ------------------
+        if len(args)==0:
+            fig, ax = plt.subplots(dpi=self.PlotDPI)
+        else:
+            fig = args[0]
+            ax  = args[1]
+
+        f = self.fv/10**self.FScale
+
+        dum = np.mean(abs(self.cs)**2,1) if crossSpec else self.cc
+        if crossSpec:
+            ax.semilogy(f, np.mean(abs(self.cs)**2,1), linewidth=self.LineWidth, color=self.LineColor[50])
+        else:
+            ax.plot(f, self.cc, linewidth=self.LineWidth, color=self.LineColor[50])
+
+        fstr = r'$f\,\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        ystr = r'$\langle|\mathcal{C}(f)|^2\rangle\,{\rm [arb.]}$' if crossSpec else r'$c^2(f)$'
+        PlotLabels(fig,ax,[fstr,ystr],self.FontSize,self.CbarNorth)
+        ax.set_xlim(f[0], f[-1])
+        if len(vLim)==2:
+            ax.set_ylim(10**vLim[0],10**vLim[1])
+
+        if len(args)==0:
+            plt.tight_layout()
+            plt.show()
+        return
+
+
     def PlotSpectro(self,*args,vLim=[],maxLine=-1):
     # ------------------
     # Plot spectrograms
@@ -1336,11 +1386,11 @@ class BicAn:
             b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
             
             b2noisebase = 10 if self.SpecType=='stft' else self.SampRate / min( abs(self.fv[X[0]]), abs(self.fv[Y[0]]), abs(self.fv[X[0]+Y[0]]) ) # vanMilligen PoP (1995)
-            ###b2noisebase = 4*b2true / (1-b2true)**3 ##<- This is from ElgarSebert (1989), 10 is Fackrell (1995), ElgarGuza (1988)
+            # 10 from Fackrell (1995), ElgarGuza (1988)
+            # Actually, 9.2 represents the 99% confidence level, so 10 is >99%
             b2noise = ( b2noisebase / (2*N) )**0.5
             errb2 = N**(-0.5)
-            # b2noise = b2noisebase / (2*N)
-            # errb2 = 1/N
+            # errb2 = (2 * b2true/N * (1-b2true)**3 )**0.5 ## <- This is from ElgarSebert (1989)
             ax.axvspan(b2true-errb2, b2true+errb2, facecolor='C2', alpha=0.2)
 
             # Calculated standard deviation
@@ -1388,7 +1438,6 @@ class BicAn:
                     ax.fill_between(dumt,beta_hi/np.pi, beta_lo/np.pi, color=self.LineColor[(50+40*k) % 256], alpha=0.2)
 
             ax.set_xlim([dumt[0],dumt[-1]])
-
 
             _,ystr = self.WhichPlot(local=self.bs)
             if self.PlotType == 'angle':
@@ -1526,20 +1575,21 @@ class BicAn:
         return
 
 
-    def PlotGUI(self,SaveAs=None):
+    def PlotGUI(self,SaveAs=None,subplotType=None):
     # ------------------
     # GUI test
     # ------------------
         fig = plt.figure(dpi=self.PlotDPI) ###,figsize=[9,6])
 
-        ax1 = plt.subplot(121)
-        ax2 = plt.subplot(222)
-        ax3 = plt.subplot(224)
-
-        # Alternate joint ~> Should have option, yes?
-        # ax1 = plt.subplot(221)
-        # ax2 = plt.subplot(122)
-        # ax3 = plt.subplot(223)
+        if subplotType is None:
+            ax1 = plt.subplot(121)
+            ax2 = plt.subplot(222)
+            ax3 = plt.subplot(224)
+        else:
+            # Alternate joint ~> Should have option, yes?
+            ax1 = plt.subplot(221)
+            ax2 = plt.subplot(122)
+            ax3 = plt.subplot(223)
 
         # Save figure and axes with object
         self.Figure = fig
@@ -1674,8 +1724,8 @@ class BicAn:
             if self._Nseries==1:
                 # Plot lines on spectrogram and PSD
                 for k in [Ix,Iy,Ix+Iy]:
-                    self.AxHands[1].axhline(f[k], color='red', linewidth=1.5)
-                    self.AxHands[2].axvline(f[k], color='red', linewidth=1.5)
+                    self.AxHands[1].axhline(f[k], color='red', linewidth=1.5,alpha=0.5)
+                    self.AxHands[2].axvline(f[k], color='red', linewidth=1.5,alpha=0.5)
 
             # Aha! This is the secret sauce!
             self.Figure.canvas.draw()
@@ -1685,7 +1735,7 @@ class BicAn:
             if event.button==1:
                 self.PlotPointOut([Ix],[Iy]) if not self.InstFreqFlag else self.PlotInstFreq(Ix,Iy)
             elif event.button==3:
-                self.PlotPointOut([Ix],[Iy],PlotAll=True)
+                self.PlotPointOut([Ix],[Iy],PlotAll=True,CheckNeighbors=True) if not self.InstFreqFlag else self.InstDiffFreq(Ix,Iy)
 
         elif ax == self.AxHands[1]: # Check spectrogram
             tx = event.xdata
@@ -1778,7 +1828,7 @@ class BicAn:
         return
 
 
-    def CheckCouple(self,f,calcsum=False):
+    def CheckCouple(self,f,checkdiff=False):
     # ------------------
     # For a given test vector of freqs, check nth order coupling
     # ------------------
@@ -1790,27 +1840,30 @@ class BicAn:
         out = np.zeros(L)
         for k in range(L):
             dum = f * mask[k,:]
-            if calcsum:
-                dum[0] = f[0] + np.sum(-dum[1::])
+            if checkdiff:
+                #dum[0] = f[0] + np.sum(-dum[1::])
+                dum[0] = sum(f)
             out[k],_,_ = GetPolySpec(self.sg,dum,self.LilGuy)
-            print(dum,'~>',out[k])
+            print(dum,'=',self.fv[1]*dum/10**self.FScale, '%sHz' % (ScaleToString(self.TScale)),' ~>',out[k])
         print('Mean is ',np.mean(out))
         return out
 
 
-    def InstDiffFreq(self,j,k,fband=1.0,dist='gauss',plot=True,err=False):
+    def InstDiffFreq(self,j,k,fband=0,dist='gauss',plot=True,err=False):
     # ------------------
     # Kind of like a beefed up GetBispec()
     # ------------------
         b2est,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,j=j,k=k)
         dt = self.tv[1]-self.tv[0]
         dBeta_dt = dphase_dt(Bi) / dt
-        d_dt_err = np.sqrt( 2 * (1/b2est - 1) / len(self.tv) ) / dt
+        d_dt_err = np.sqrt( 2 * (1/b2est - 1) / len(self.tv) ) / dt 
         amp = np.abs(Bi)
 
         freq = dBeta_dt/(2*np.pi)
         freq_err = d_dt_err / (2*np.pi)
         amp = amp/np.max(amp)
+
+        fband = self.SampRate/200 if fband==0 else fband
 
         # What distribution to use???
         if dist=='gauss':
@@ -1819,13 +1872,13 @@ class BicAn:
             um = (1 + (freq/fband)**2 )**-1 * amp
 
         if plot:
-            fig,ax = plt.subplots()
+            fig,ax = plt.subplots(dpi=self.PlotDPI)
 
             # ax.plot(freq,amp,'o')
             # bic.PlotLabels(plt.gcf(),plt.gca(),[r'$\Delta f_{\rm inst}~{\rm [Hz]}$',r'$|\widetilde{\mathcal{B}}|~{\rm [arb.]}$'],grid=True,fsize=20)
 
             if err:
-                ax.errorbar(freq/10**self.FScale,amp,xerr=freq_err,linestyle='',marker='.',markersize=2,capsize=2.0,ecolor='red',mec='C0')
+                ax.errorbar(freq/10**self.FScale,amp,xerr=freq_err/10**self.FScale,linestyle='',marker='.',markersize=2,capsize=2.0,ecolor='red',mec='C0')
             else:
                 PlotTimeline(freq/10**self.FScale,amp,t=self.tv/10**self.TScale,fig=fig,ax=ax,cbar=r'$t\, [\rm{%ss}]$' % (ScaleToString(self.TScale)),cmap='twilight')
             ax.set_xlim(-fband,fband)
@@ -1910,6 +1963,8 @@ class BicAn:
         
         Nt = len(self.tv) if freq_type=='spectro' else len(self.Raw)
         X = np.zeros( (3,Nt))
+        if freq_type=='zerocross' and diff_freq:
+            Y = np.zeros( (3,Nt))
         
         for n in range(3):
         
@@ -1935,45 +1990,66 @@ class BicAn:
                 if freq_type=='hilbert':
                     dum = hilbert(dum)
                 else:
-                    T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=len(dum)*10,T0=self.TZero)
+                    T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=len(dum)*20,T0=self.TZero)
                     # Interpolate for convenience!
                     freq = np.interp(t,T/10**self.TScale,freq)
        
             if freq_type=='zerocross':
-                X[n,:] = freq
+                X[n,:] = 2*np.pi*np.abs( freq )
+                if diff_freq:
+                    Y[n,:] = np.abs( np.gradient( np.unwrap(np.angle( hilbert(dum) ))) / dt )
+
             else:
-                X[n,:] = np.gradient( np.unwrap(np.angle(dum))) / dt
+                X[n,:] = np.abs( np.gradient( np.unwrap(np.angle(dum))) / dt )
                 
         
         A3 = np.abs(self.sg[j+k,:,0])
         
-        fig,ax = plt.subplots()   
+        fig,ax = plt.subplots(dpi=self.PlotDPI)   
         
         if not diff_freq:
-            ax.plot( t, X[0,:]/(2*np.pi) - self.fv[j] )
-            ax.plot( t, X[1,:]/(2*np.pi) - self.fv[k] )
-            ax.plot( t, X[2,:]/(2*np.pi) - self.fv[j+k] )
+            # ax.plot( t, X[0,:]/(2*np.pi) - self.fv[j] )
+            # ax.plot( t, X[1,:]/(2*np.pi) - self.fv[k] )
+            # ax.plot( t, X[2,:]/(2*np.pi) - self.fv[j+k] )
+
+            dumstr = r'$\,\pm\,%d\,\mathrm{%sHz}$' % (fband/10**self.FScale,ScaleToString(self.FScale))
+
+            # Aligns with dissertation convention
+            ax.plot( t, (X[1,:]/(2*np.pi) - self.fv[k])/10**self.FScale , label=r'$%d$' % (self.fv[k]/10**self.FScale) + dumstr, lw=2)
+            ax.plot( t, (X[0,:]/(2*np.pi) - self.fv[j])/10**self.FScale , label=r'$%d$' % (self.fv[j]/10**self.FScale) + dumstr, lw=2)
+            ax.plot( t, (X[2,:]/(2*np.pi) - self.fv[j+k])/10**self.FScale , label=r'$%d$' % (self.fv[j+k]/10**self.FScale) + dumstr, lw=2)
             
             # Attempt at coupling coefficient
             #ax.plot( t, ( Z/(2*np.pi) - self.fv[j+k] ) / (np.imag(Bi) / A3) )
             
             specstr = '%s_InstFreq.png' % SaveStr
+
+            ax.legend(fontsize=2*self.FontSize//3)
+
         else:
-            ax.plot( t, (X[0,:]+X[1,:]-X[2,:])/(2*np.pi))
+            ax.plot( t, (X[0,:]+X[1,:]-X[2,:])/(2*np.pi) /10**self.FScale, label=r'$\dot{\beta}/2\pi$', lw=2)
             
-            dBeta_dt = np.gradient( np.unwrap(np.angle(Bi))) / (self.tv[1]-self.tv[0])
-            ax.plot( self.tv/10**self.TScale, dBeta_dt/(2*np.pi) )
+            dBeta_dt = ( np.gradient( np.unwrap(np.angle(Bi))) / (self.tv[1]-self.tv[0]) ) /10**self.FScale
+            ax.plot( self.tv/10**self.TScale, dBeta_dt/(2*np.pi) , label=r'$\dot{\beta}/2\pi$', lw=2)
+
+            if freq_type=='zerocross' and diff_freq:
+                ax.plot( t, (Y[0,:]+Y[1,:]-Y[2,:])/(2*np.pi) /10**self.FScale, label=r'$\dot{\beta}/2\pi$', lw=2)
 
             # Uncertainty as given in Fackrell
             # For derivative, we have \sigma_f' = \sqrt(2) * sigma_f / dt
-            d_dt_err = np.sqrt( 2 * (1/b2est - 1) / len(self.tv) ) / (self.tv[1]-self.tv[0]) / (2*np.pi)
+            d_dt_err = np.sqrt( 2 * (1/b2est - 1) / len(self.tv) ) / (self.tv[1]-self.tv[0]) / (2*np.pi) /10**self.FScale
             ax.fill_between( self.tv/10**self.TScale, dBeta_dt/(2*np.pi) - d_dt_err, dBeta_dt/(2*np.pi) + d_dt_err, color='C1', alpha=0.2)
             
             specstr = '%s_DiffFreq.png' % SaveStr
-            
-        ax.set_ylim(-fwindow,fwindow)
+        
+        ax.set_xlim(t[0],t[-1])    
+        ax.set_ylim(-fwindow/10**self.FScale,fwindow/10**self.FScale)
+
         tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(self.TScale))
-        PlotLabels(fig,ax,[tstr,r'$\Delta f_{\rm inst}\,{\rm [Hz]}$'])  
+        fstr = r'$\, [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
+        labstr = r'$\delta f$' if not diff_freq else r'$\Delta f_{\rm inst}$'
+        # PlotLabels(fig,ax,[tstr,r'$\Delta f_{\rm inst}\,{\rm [Hz]}$'])  
+        PlotLabels(fig,ax,[tstr,labstr+fstr])  
         
         if dWin is not None:
             ax.axvspan(dWin[0],dWin[1],color='cyan',alpha=0.2)
@@ -2185,15 +2261,15 @@ def SignalGen(fS=1,tend=100,Ax=1,fx=1,Afx=0,Ay=0,fy=0,Afy=0,Az=0,Ff=0,noisy=2):
     return sig,t,float(fS)
 
 
-def TestSignal(whatsig):
+def TestSignal(whatsig,tend=100,noisy=2,fS=200,f1=19,f2=45):
 # ------------------
 # Provides FM test signal
 # ------------------
-    fS   = 200
-    tend = 100
-    noisy = 2
-    f1 = 19
-    f2 = 45
+    # fS   = 200
+    # tend = 100
+    # noisy = 2
+    # f1 = 19
+    # f2 = 45
     dum = whatsig.lower()
     if dum == 'classic':
         inData,t,_ = SignalGen(fS,tend,fx=f2,Afx=6,Ay=1,fy=f1,Afy=10,Az=1,Ff=1/20)
@@ -2259,9 +2335,12 @@ def TestSignal(whatsig):
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x + y + x*y + nz
     elif dum == 'cube_couple':
-        x,t,_ = SignalGen(fS,tend,fx=13,noisy=0)
-        y,_,_ = SignalGen(fS,tend,fx=17,noisy=0)
-        z,_,_ = SignalGen(fS,tend,fx=54,noisy=0)
+        # x,t,_ = SignalGen(fS,tend,fx=13,noisy=0)
+        # y,_,_ = SignalGen(fS,tend,fx=17,noisy=0)
+        # z,_,_ = SignalGen(fS,tend,fx=54,noisy=0)
+        x,t,_ = SignalGen(fS,tend,fx=24,noisy=0)
+        y,_,_ = SignalGen(fS,tend,fx=37,noisy=0)
+        z,_,_ = SignalGen(fS,tend,fx=41,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x + y + z + x*y*z + nz
     elif dum == 'coherence':
@@ -2324,7 +2403,8 @@ def TestSignal(whatsig):
         y = np.sin( 2*np.pi*(fy*t + dfy) )              # f2
         z = np.sin( 2*np.pi*(fz*t + dfz) )              # f3
 
-        phi = 0.5 * np.pi * np.sin(np.pi*t/tend)**2;
+        # phi = 0.5 * np.pi * np.sin(np.pi*t/tend)**2;
+        phi = 2*np.pi * t/tend
 
         u = np.sin( 2*np.pi*(fx*t + fy*t + fz*t + dfx + dfy + dfz) + phi) # f1 + f2
 
@@ -2430,7 +2510,8 @@ def ApplyCWT(sig,samprate=1,sigma=3.14,limFreq=2,alphaExp=0.5):
 
     # Morlet wavelet in frequency space
     ###Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma) * a**(alphaExp-0.5) * np.exp( -2 * np.pi**2 * sigma**2 * ( freq_vec/a - f0)**2 )
-    Psi = lambda a: (np.pi**0.25)*np.sqrt(2) * a**(alphaExp-0.5) * np.exp( -2 * np.pi**2 * (sigma/a)**2 * ( np.arange(nyq) - a)**2 )
+    ##Psi = lambda a: (np.pi**0.25)*np.sqrt(2) * a**(alphaExp-0.5) * np.exp( -2 * np.pi**2 * (sigma/a)**2 * ( np.arange(nyq) - a)**2 )
+    Psi = lambda a: (np.pi**0.25)*np.sqrt(2*sigma/f0) * a**(alphaExp-0.5) * np.exp( -2 * np.pi**2 * (sigma/a)**2 * ( np.arange(nyq) - a)**2 )
 
     for k in range(N):
         fft_sig = np.fft.fft(sig[:,k])
