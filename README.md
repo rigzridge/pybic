@@ -1,5 +1,6 @@
-# PyBic
-This module implements _BicAn_ in Python!
+![PyBic logo](PyBic.png)
+
+This module implements _Bicoherence Analyzer_ in Python!
 
 To get started, place the ``pybic.py`` file in your desired directory, and try
 ```python
