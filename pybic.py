@@ -73,6 +73,9 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 2/16/2025 -> Fixed missing fwindow input for InstDiffFreq(); finally added
+# amplitude plotting
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/16/2024 -> Fixes to PlotInstFreq() [factor of 2pi for zero-cross, ...]
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 6/17/2024 -> ClickPlot() now autos to CheckNeighbors=True, overplotted red
@@ -356,6 +359,7 @@ from tkinter import messagebox, filedialog, ttk
 from scipy.signal import butter, sosfiltfilt, sosfreqz
 from scipy.signal import hilbert
 from scipy.special import sici
+from scipy.ndimage import uniform_filter1d 
 
 # Computer modern font (LaTeX default)
 plt.rcParams['mathtext.fontset'] = 'cm'
@@ -1849,7 +1853,7 @@ class BicAn:
         return out
 
 
-    def InstDiffFreq(self,j,k,fband=0,dist='gauss',plot=True,err=False):
+    def InstDiffFreq(self,j,k,fband=0,fwindow=0,dist='gauss',plot=True,err=False):
     # ------------------
     # Kind of like a beefed up GetBispec()
     # ------------------
@@ -1864,6 +1868,7 @@ class BicAn:
         amp = amp/np.max(amp)
 
         fband = self.SampRate/200 if fband==0 else fband
+        fwindow = self.SampRate/100 if fwindow==0 else fwindow
 
         # What distribution to use???
         if dist=='gauss':
@@ -1881,7 +1886,7 @@ class BicAn:
                 ax.errorbar(freq/10**self.FScale,amp,xerr=freq_err/10**self.FScale,linestyle='',marker='.',markersize=2,capsize=2.0,ecolor='red',mec='C0')
             else:
                 PlotTimeline(freq/10**self.FScale,amp,t=self.tv/10**self.TScale,fig=fig,ax=ax,cbar=r'$t\, [\rm{%ss}]$' % (ScaleToString(self.TScale)),cmap='twilight')
-            ax.set_xlim(-fband,fband)
+            ax.set_xlim(-fwindow/10**self.FScale,fwindow/10**self.FScale)
             ax.set_ylim(0,1)
             
             PlotLabels(fig,ax,[r'$\Delta f_{\rm inst}~{\rm [%sHz]}$' % (ScaleToString(self.FScale)),r'$|\widetilde{\mathcal{B}}|/|\widetilde{\mathcal{B}}|_{\rm max}$'])
@@ -1893,17 +1898,18 @@ class BicAn:
         return freq, amp, freq_err, um
 
 
-    def InstAmpFreq(self,j,calc_type='hilbert',fband=0,fwindow=0,realBPF=True):
+    def InstAmpFreq(self,j,calc_type='hilbert',fband=0,realBPF=True,avPoints=50,IsFreq=False):
     # ------------------
-    # Perform instantaneous frequency analysis
+    # Perform instantaneous amplitude and frequency analysis
     # ------------------
 
     # NEEDS FINISHED!!!
+        if IsFreq:    
+            _,j = arrmin(abs( self.fv/10**self.FScale - j ))
         
         f0 = self.fv[j]     
 
-        fband = self.SampRate/200 if fband==0 else fband
-        fwindow = self.SampRate/100 if fwindow==0 else fwindow
+        fband = self.SampRate/200 if fband>0 else fband
         
         Nt = len(self.tv) if calc_type=='spectro' else len(self.Processed)
         
@@ -1913,29 +1919,36 @@ class BicAn:
             df = self.fv[1]-self.fv[0]
             dt = self.tv[1]-self.tv[0]
             
-            dum = self.sg[arr[n],:,0]
+            dum = self.sg[j,:,0]
             
         elif calc_type in ['hilbert','zerocross']:
             
             dt = 1/self.SampRate
             t = (self.TZero + np.arange(len(self.Processed)) * dt )/10**self.TScale
             df = self.SampRate / len(self.Processed)
-            flim = self.fv[arr[n]]
-            if realBPF:
-                dum = ApplyRealBandpass(self.Processed[:,0],self.SampRate,flim,fband)
+            flim = self.fv[j]
+            if fband<0:
+                dum = self.Processed[:,0]
             else:
-                dum = ApplyBandpass(self.Processed[:,0],df,flim,fband)
+                if realBPF:
+                    dum = ApplyRealBandpass(self.Processed[:,0],self.SampRate,flim,fband)
+                else:
+                    dum = ApplyBandpass(self.Processed[:,0],df,flim,fband)
             
             if calc_type=='hilbert':
                 dum = hilbert(dum)
             else:
-                Ninterp = None if fS/f0 > 10 else np.ceil(10*len(dum)*f0/fS)
-                print('Using...')
+                Ninterp = None if self.SampRate/f0 > 10 else int(10*len(dum)*f0/self.SampRate)
+                if Ninterp is not None: 
+                    print('Interpolating!')
                 T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=Ninterp,T0=self.TZero)
                 # Interpolate for convenience!
                 freq = np.interp(t,T/10**self.TScale,freq)
+                # Amplitudes are boxcar averages
+                amp = boxcar_ave(amp,avPoints)
 
         elif calc_type=='peak':
+            maxLine = 0.
             _,Nf = arrmin( abs( f - maxLine ) )
         
             finst = 0*self.tv
@@ -1944,9 +1957,9 @@ class BicAn:
                 finst[k] = self.fv[Nf+m]  
        
         if calc_type!='zerocross':
-            amp = 0
-            freq = np.gradient( np.unwrap(np.angle(dum))) / dt
-        return amp, freq, t
+            amp = np.abs(dum)
+            freq = dphase_dt(dum) / dt / (2*np.pi)
+        return amp, freq, t, dum
 
 
     def PlotInstFreq(self,j,k,diff_freq=True,freq_type='hilbert',fband=0,fwindow=0,realBPF=True,SaveStr='',dWin=None):
@@ -1996,7 +2009,8 @@ class BicAn:
        
             if freq_type=='zerocross':
                 X[n,:] = 2*np.pi*np.abs( freq )
-                if diff_freq:
+                # If zerocross, go ahead and calculate hilbert transform so you have all three! 
+                if diff_freq: 
                     Y[n,:] = np.abs( np.gradient( np.unwrap(np.angle( hilbert(dum) ))) / dt )
 
             else:
@@ -2838,7 +2852,7 @@ def ApplyDetrend(y):
 # ------------------
     n = len(y)
     dumx  = np.arange(1,n+1) 
-    s = (6/(n*(n**2-1)))*(2*sum(dumx*y) - sum(y)*(n+1))
+    s = (6/(n*(n**2-1))) * (2*sum(dumx*y) - sum(y)*(n+1))
     y = y - s*dumx
     return y
 
@@ -2920,6 +2934,14 @@ def dphase_dt(z):
 # Returns gradient of unwrapped phase lol
 # ------------------ 
     return np.gradient( np.unwrap(np.angle(z)))
+
+def boxcar_ave(x,N):
+# ------------------
+# Smooths data, attempts to return correct amplitudes
+# ------------------ 
+    a = uniform_filter1d( abs(x), size=N )
+    # Try to get back to actual amplitudes!
+    return a * np.max(abs(x)) / max(a)
 
 def bin_mat(n):
   # Creates matrix of ...
