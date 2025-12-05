@@ -3,7 +3,7 @@
 #      ______     ______ _      
 #      | ___ \    | ___ (_)          Bicoherence Analysis Module for Python
 #      | |_/ /   _| |_/ /_  ___      --------------------------------------
-#      |  __/ | | | ___ \ |/ __|               v2.0 (c) 2022-2024
+#      |  __/ | | | ___ \ |/ __|               v2.0 (c) 2022-2025
 #      | |  | |_| | |_/ / | (__                        
 #      \_|   \__, \____/|_|\___|              G. Riggs & T. Matheny
 #             __/ |                      
@@ -73,8 +73,22 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 12/05/2025 -> Fixed labeling for 3D trajectories, ie, ['x','y','z','col']
+# produces no colorbar when 'col' = ''
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 10/29/2025 -> Added "forceGrid" option to PlotLabels() so you can still
+# use a grid on mesh/contour plots [but isn't this kind of dumb???]
+# Incorporated check for window function, now warns if defaulting to 'hann'
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 5/23/2025 -> Added "cbarfsize" parameter to PlotLabels()
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 3/18/2025 -> Added CalcHistVsT() method to track time-series' statistical
+# properties over time!
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 2/20/2025 -> Added "squeezeAxes" flag to PlotBispec(), borrowed from
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 2/16/2025 -> Fixed missing fwindow input for InstDiffFreq(); finally added
-# amplitude plotting
+# InstFreqAmp() function
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 8/16/2024 -> Fixes to PlotInstFreq() [factor of 2pi for zero-cross, ...]
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -401,6 +415,7 @@ class BicAn:
     InCOI     = np.array([])
     JustSpec  = False
     SpecType  = 'stft'
+    CalcHist  = False
     Bispectro = False
 
     ErrLim    = 1e15
@@ -467,6 +482,10 @@ class BicAn:
     mb = []   # Mean b^2
     sb = []   # Std dev of b^2
 
+    hg = []   # Histogram of signal
+    mh = []   # Mean histogram
+    ht = []   # Histogram time
+    bv = []   # Bin vector
 
     # Class methods
     def __init__(self,inData,**kwargs):
@@ -719,6 +738,9 @@ class BicAn:
             self.SpectroWavelet()
             self.SpecType = 'wave'   
 
+        if self.CalcHist:
+            self.HistogramSig()    
+
         if self.Cross:
             self.Coherence()
 
@@ -800,6 +822,22 @@ class BicAn:
         self.ft = acwt 
         self.sg = CWT
         return
+
+
+    def HistogramSig(self,Nbins=200):
+    # ------------------
+    # STFT method
+    # ------------------ 
+
+        binMax = np.max(abs(self.Processed))
+        hist,mh,binvec,time_vec = CalcHistVsT(self.Processed,self.SampRate,self.SubInt,self.Step,self.TZero,binMax=binMax,Nbins=Nbins)
+        
+        self.hg = hist
+        self.mh = mh
+
+        self.bv = binvec
+        self.ht = time_vec
+        return  
 
 
     def Coherence(self):
@@ -998,6 +1036,34 @@ class BicAn:
             plt.show()
         return
 
+    def PlotMeanHist(self,*args,vLim=[]):
+    # ------------------
+    # Plot mean histogram
+    # ------------------
+        if len(args)==0:
+            fig, ax = plt.subplots(dpi=self.PlotDPI)
+        else:
+            fig = args[0]
+            ax  = args[1]
+
+        b = self.bv
+        dum = self.mh if self.PlotSlice is None else self.hg[:,self.PlotSlice,:]
+
+        for k in range(self._Nseries):
+            ax.semilogy(b, 100*dum[:,k], linewidth=self.LineWidth, color=self.LineColor[(50+40*k) % 256])
+
+        bstr = r'${\rm Amp.}\, [\mathrm{arb.}]$'
+        ystr = r'${\rm \%}$'
+        PlotLabels(fig,ax,[bstr,ystr],self.FontSize,self.CbarNorth)
+        ax.set_xlim(b[0], b[-1])
+        if len(vLim)==2:
+            ax.set_ylim(10**vLim[0],10**vLim[1])
+
+        if len(args)==0:
+            plt.tight_layout()
+            plt.show()
+        return
+
 
     def PlotCoherence(self,*args,crossSpec=False,vLim=[]):
     # ------------------
@@ -1078,7 +1144,40 @@ class BicAn:
         return
 
 
-    def PlotBispec(self,*args,normb2=False,plot3d=False):
+    def PlotHisto(self,*args,vLim=[]):
+    # ------------------
+    # Plot histograms
+    # ------------------
+        if len(args)==0:
+            fig, ax = plt.subplots(dpi=self.PlotDPI)
+            cax = None
+        else:
+            fig = args[0]
+            ax  = args[1]
+            cax = self.CaxHands[1]
+
+        tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(self.TScale))
+        bstr = r'${\rm Amp.}\, [\mathrm{arb.}]$'
+        cbarstr = r'$\log_{10}\left({\rm \%}\right)$'
+
+        t = self.ht/10**self.TScale
+        b = self.bv
+
+        if len(vLim)==2:
+            im = ax.pcolormesh(t,b,np.log10(100*self.hg[:,:,self.PlotSig] + 0*1e-16), cmap=self.CMap, shading='auto', vmin=vLim[0], vmax=vLim[1])
+        else:
+            im = ax.pcolormesh(t,b,np.log10(100*self.hg[:,:,self.PlotSig] + 0*1e-16), cmap=self.CMap, shading='auto')
+        cax = PlotLabels(fig,ax,[tstr,bstr,cbarstr],self.FontSize,self.CbarNorth,im,cax)
+        ax.set_xlim(t[0], t[-1])
+        ax.set_ylim(b[0], b[-1])
+
+        if len(args)==0:
+            plt.tight_layout()
+            plt.show()
+        return
+
+
+    def PlotBispec(self,*args,normb2=False,plot3d=False,squeezeAxes=True):
     # ------------------
     # Plot bispectrum
     # ------------------
@@ -1127,7 +1226,10 @@ class BicAn:
                 else:
                     im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
 
-            ax.set_ylim(f[0], f[-1]/2)
+            if squeezeAxes:
+                ax.set_ylim(f[0], f[-1]/2)
+            else:
+                ax.set_ylim(f[0], f[-1])
 
             # Draw triangle
             ax.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.5,0.5,0.5], linewidth=2.5)
@@ -1885,7 +1987,7 @@ class BicAn:
             if err:
                 ax.errorbar(freq/10**self.FScale,amp,xerr=freq_err/10**self.FScale,linestyle='',marker='.',markersize=2,capsize=2.0,ecolor='red',mec='C0')
             else:
-                PlotTimeline(freq/10**self.FScale,amp,t=self.tv/10**self.TScale,fig=fig,ax=ax,cbar=r'$t\, [\rm{%ss}]$' % (ScaleToString(self.TScale)),cmap='twilight')
+                PlotTimeline(freq/10**self.FScale,amp,t=self.tv/10**self.TScale,fig=fig,ax=ax,cbar=r'$t\, [\rm{%ss}]$' % (ScaleToString(self.TScale)),cmap=self.TLineCol)
             ax.set_xlim(-fwindow/10**self.FScale,fwindow/10**self.FScale)
             ax.set_ylim(0,1)
             
@@ -1909,7 +2011,7 @@ class BicAn:
         
         f0 = self.fv[j]     
 
-        fband = self.SampRate/200 if fband>0 else fband
+        fband = self.SampRate/200 if fband<=0 else fband
         
         Nt = len(self.tv) if calc_type=='spectro' else len(self.Processed)
         
@@ -1938,14 +2040,16 @@ class BicAn:
             if calc_type=='hilbert':
                 dum = hilbert(dum)
             else:
-                Ninterp = None if self.SampRate/f0 > 10 else int(10*len(dum)*f0/self.SampRate)
-                if Ninterp is not None: 
-                    print('Interpolating!')
-                T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=Ninterp,T0=self.TZero)
-                # Interpolate for convenience!
-                freq = np.interp(t,T/10**self.TScale,freq)
                 # Amplitudes are boxcar averages
-                amp = boxcar_ave(amp,avPoints)
+                amp = boxcar_ave(dum,avPoints)
+                # Interpolate for convenience!
+                Ninterp = None if self.SampRate/f0 > 10 else int(10*len(dum)*f0/self.SampRate)
+                # if Ninterp is not None: 
+                #     T,dum = WhittakerShannon(dum,Ninterp,fS=1/dt,T0=self.TZero)
+                #     dt=T[1]-T[0]
+                T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=Ninterp,T0=self.TZero)
+                freq = np.interp(t,T/10**self.TScale,freq)
+                
 
         elif calc_type=='peak':
             maxLine = 0.
@@ -2003,7 +2107,8 @@ class BicAn:
                 if freq_type=='hilbert':
                     dum = hilbert(dum)
                 else:
-                    T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=len(dum)*20,T0=self.TZero)
+                    Ninterp = None if self.SampRate/f0 > 10 else int(10*len(dum)*f0/self.SampRate)
+                    T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=Ninterp,T0=self.TZero)
                     # Interpolate for convenience!
                     freq = np.interp(t,T/10**self.TScale,freq)
        
@@ -2041,13 +2146,13 @@ class BicAn:
             ax.legend(fontsize=2*self.FontSize//3)
 
         else:
-            ax.plot( t, (X[0,:]+X[1,:]-X[2,:])/(2*np.pi) /10**self.FScale, label=r'$\dot{\beta}/2\pi$', lw=2)
+            ax.plot( t, (X[0,:]+X[1,:]-X[2,:])/(2*np.pi) /10**self.FScale, label=r'$1/T$', lw=2)
             
-            dBeta_dt = ( np.gradient( np.unwrap(np.angle(Bi))) / (self.tv[1]-self.tv[0]) ) /10**self.FScale
+            dBeta_dt = ( np.gradient( np.unwrap(np.angle(Bi))) / ( self.tv[1]-self.tv[0]) ) /10**self.FScale
             ax.plot( self.tv/10**self.TScale, dBeta_dt/(2*np.pi) , label=r'$\dot{\beta}/2\pi$', lw=2)
 
             if freq_type=='zerocross' and diff_freq:
-                ax.plot( t, (Y[0,:]+Y[1,:]-Y[2,:])/(2*np.pi) /10**self.FScale, label=r'$\dot{\beta}/2\pi$', lw=2)
+                ax.plot( t, (Y[0,:]+Y[1,:]-Y[2,:])/(2*np.pi) /10**self.FScale, label=r'$\dot{\phi}(x_a)/2\pi$', lw=2)
 
             # Uncertainty as given in Fackrell
             # For derivative, we have \sigma_f' = \sqrt(2) * sigma_f / dt
@@ -2058,6 +2163,9 @@ class BicAn:
         
         ax.set_xlim(t[0],t[-1])    
         ax.set_ylim(-fwindow/10**self.FScale,fwindow/10**self.FScale)
+
+        if freq_type=='zerocross' and diff_freq:
+            ax.legend(fontsize=2*self.FontSize//3)
 
         tstr = r'$t\, [\mathrm{%ss}]$' % (ScaleToString(self.TScale))
         fstr = r'$\, [\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
@@ -2102,7 +2210,10 @@ def WhittakerShannon(x,Ninterp,fS=1.0,T0=0.0,interp='func'):
     T = np.linspace(0,Tfinal,Ninterp)
     D = 0*T
     dsinc = lambda t: t * (t==0) + (t!=0) * (t * np.cos(np.pi*t) - np.sin(np.pi*t)/np.pi ) / t**2
+    print('Interpolating %s...' % interp)
     for k in range(N):
+        if (k%100)==0:
+            LoadBar(k,N)
         # D += fS*x[k]*dsinc(T*fS-k) if diff else x[k]*np.sinc(T*fS-k) 
         if interp=='func':
             D += x[k]*np.sinc(T*fS-k) 
@@ -2112,6 +2223,7 @@ def WhittakerShannon(x,Ninterp,fS=1.0,T0=0.0,interp='func'):
             si,_ = sici(np.pi * (T*fS-k))
             D += x[k]*si / (np.pi*fS)
 
+    print('done!')
     return T+T0,D
 
 
@@ -2141,7 +2253,7 @@ def InstFreqZeroCross(x,dt=1.0,crossType='both',Ninterp=None,T0=0.0):
     return T[np.sort(loc)], freq[lsort] # np.sort(loc)
 
 
-def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True,shrink=0.7):
+def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True,minorgrid=True,shrink=0.7,cbarfsize=None,forceGrid=False,cbarPad=0.05,minorgridColor=[0.9,0.9,0.9]):
 # ------------------
 # Convenience function
 # ------------------
@@ -2151,7 +2263,9 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
     fsize = fsize if n<4 else 3*fsize/4
 
     # Kill grid if n>2
-    grid = grid if n<=2 else False
+    grid = grid if (n<=2 or forceGrid) else False
+
+    cbarfsize = 3*fsize/4 if cbarfsize is None else cbarfsize
 
     # Initialize list for tick label info
     labels = []
@@ -2165,7 +2279,7 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         if cax is None:
             divider = make_axes_locatable(ax)
             cbarloc = 'top' if cbarNorth else 'right'
-            cax = divider.append_axes(cbarloc, size='5%', pad=0.05)
+            cax = divider.append_axes(cbarloc, size='5%', pad=cbarPad)
         else:
             cax.clear()
         if cbarNorth:
@@ -2176,7 +2290,7 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         else:
             fig.colorbar(im, cax=cax)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
-        cax.tick_params(labelsize=3*fsize/4)
+        cax.tick_params(labelsize=cbarfsize)
         if cbarweight=='ticks':
             labels += cax.get_xticklabels()
             labels += cax.get_yticklabels()
@@ -2185,11 +2299,12 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         ax.zaxis.set_rotate_label(False)  # disable automatic rotation
         ax.set_zlabel(strings[2], fontsize=fsize, fontweight=fweight, rotation=90)
 
-        cbar = fig.colorbar(im,cax=None,ax=ax,shrink=shrink,orientation='horizontal')
+        if strings[3]!='':
+            cbar = fig.colorbar(im,cax=None,ax=ax,shrink=shrink,orientation='horizontal')
 
-        # cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
-        cbar.ax.set_xlabel(strings[3], fontsize=fsize, fontweight=fweight)
-        cbar.ax.tick_params(labelsize=3*fsize/4)
+            # cbar.ax.set_ylabel(strings[3], fontsize=fsize, fontweight=fweight)
+            cbar.ax.set_xlabel(strings[3], fontsize=fsize, fontweight=fweight)
+            cbar.ax.tick_params(labelsize=cbarfsize)
 
         labels += ax.get_zticklabels()
         # labels += cbar.ax.get_xticklabels()
@@ -2209,8 +2324,9 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         label.set_fontweight(tickweight)
 
     if grid:
-        ax.grid(visible=True,which='minor',linewidth=0.5,color=[0.9,0.9,0.9])
         ax.grid(visible=True,which='major')
+        if minorgrid:
+            ax.grid(visible=True,which='minor',linewidth=0.5,color=minorgridColor)
     return cax
 
 
@@ -2462,13 +2578,15 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
     Ntoss = 0                       # Number of removed slices
     
     # Apply window
-    if window == 'flat':
+    if window in ['flat','flattop','flattopwin']:
         win = FlatTopWindow(subint) 
-    elif window == 'rect':
+    elif window in ['none','rect','rectangle']:
         win = HannWindow(subint,q=0) 
-    elif window == 'sine':
+    elif window in ['sin','sine']:
         win = HannWindow(subint,q=1) 
     else: # Must be Hann!
+        if window!='hann':
+            print('***WARNING*** :: Defaulting to Hann window!')
         win = HannWindow(subint,q=2)        
     
     print('Applying STFT...      ')
@@ -2507,7 +2625,34 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
     return spec,afft,freq_vec,time_vec,err,Ntoss
 
 
-def ApplyCWT(sig,samprate=1,sigma=3.14,limFreq=2,alphaExp=0.5):
+def CalcHistVsT(sig,samprate=1.,subint=512,step=256,t0=0,binMax=1.,Nbins=200):
+# ------------------
+# STFT static method
+# ------------------
+    N = min(sig.shape)
+    M = 1 + (max(sig.shape) - subint)//step
+    time_vec = np.zeros(M)          # Time vector
+    binvec = np.linspace(-binMax,binMax,Nbins)
+
+    hist = np.zeros((Nbins,M,N))      # Histogram array
+
+    for m in range(M):
+        LoadBar(m,M)
+
+        time_vec[m] = t0 + (m*step+subint//2)/samprate
+        for k in range(N):
+            Ym = sig[m*step : m*step + subint, k] # Select subinterval    
+
+            counts,_ = np.histogram(Ym,bins=Nbins,range=(-binMax,binMax))
+            hist[:,m,k] = counts / np.sum(counts)
+
+    print('\b\b\b^]\n')
+    
+    mh = np.mean(hist,axis=1)   
+    return hist,mh,binvec,time_vec
+
+
+def ApplyCWT(sig,samprate=1.0,sigma=3.14,limFreq=2,alphaExp=0.5):
 # ------------------
 # Wavelet static method
 # ------------------
