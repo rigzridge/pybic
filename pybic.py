@@ -74,7 +74,8 @@
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 12/05/2025 -> Fixed labeling for 3D trajectories, ie, ['x','y','z','col']
-# produces no colorbar when 'col' = ''
+# produces no colorbar when 'col' = '', added Plot() module function to
+# cover most types of plots (lines,images,3D line plots, and volumes), Try it!
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 10/29/2025 -> Added "forceGrid" option to PlotLabels() so you can still
 # use a grid on mesh/contour plots [but isn't this kind of dumb???]
@@ -3058,6 +3059,99 @@ def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None,fsize=1
         cax.set_xlabel(cbar,fontsize=fsize) ###, fontweight=fweight)
         # fig.colorbar(line, ax=ax, label=cbar)
 
+def Plot(dats,strings=None,color=None,alpha=1.,marker=None,ms=6,lw=2,ls='-',fsize=20,fweight='normal',grid=True,
+                minorgrid=True,minorgridColor=[0.9,0.9,0.9],tickweight='bold',xlim=None,ylim=None,forceGrid=False,
+                cmap='CMRmap',cbarNorth=False,cbarweight='none',cbarfsize=None,cbarPad=0.05,vlim=None,cax=None,
+                zlim=None,shrink=0.7,elev=26,azim=-30,roll=0,zoom=0.8,dpi=180,SaveAs=None,figax=None):
+# ------------------
+# All purpose plotting!!!
+# ------------------
+
+    if figax is not None:
+        fig = figax[0]
+        ax = figax[1]
+
+    # Standard x y plot
+    if len(dats)==2:
+        if figax is None:
+            fig,ax = plt.subplots(dpi=dpi)
+        if color is None:
+            ax.plot(dats[0],dats[1],lw=lw,linestyle=ls,marker=marker,ms=ms,alpha=alpha)
+        else:
+            ax.plot(dats[0],dats[1],lw=lw,linestyle=ls,marker=marker,ms=ms,alpha=alpha,color=color)
+        if strings is None:
+            strings=['x','y']
+        cax = PlotLabels(fig,ax,strings=strings,fsize=fsize,cbarNorth=cbarNorth,fweight=fweight,
+            tickweight=tickweight,grid=grid,minorgrid=minorgrid,minorgridColor=minorgridColor)
+
+    # Either trajectory in 3D or image/surface plot
+    if len(dats)==3:
+
+        # Check image
+        if len(dats[2].shape)==2:
+            if figax is None:
+                fig,ax = plt.subplots(dpi=dpi)
+            if vlim is None:
+                # Could sub out pcolormesh for e.g., contour/contourf
+                im = ax.pcolormesh(dats[0],dats[1],dats[2],cmap=cmap)
+            else:
+                im = ax.pcolormesh(dats[0],dats[1],dats[2],cmap=cmap,vmin=vlim[0],vmax=vlim[1])
+            if strings is None:
+                strings=['x','y','c']
+            cax = PlotLabels(fig,ax,im=im,cax=cax,strings=strings,fsize=fsize,cbarNorth=cbarNorth,fweight=fweight,forceGrid=forceGrid,cbarPad=cbarPad,
+                tickweight=tickweight,cbarweight=cbarweight,cbarfsize=cbarfsize,grid=grid,minorgrid=minorgrid,minorgridColor=minorgridColor)
+
+        # Must be trajectory
+        else:
+            if figax is None:
+                fig = plt.figure(dpi=dpi)
+                ax = fig.add_subplot(111, projection='3d')
+            ax.view_init(elev=elev, azim=azim, roll=roll)
+            if color is None:
+                ax.plot(dats[0],dats[1],dats[2],lw=lw,linestyle=ls,marker=marker,ms=ms,alpha=alpha)
+            else:
+                ax.plot(dats[0],dats[1],dats[2],lw=lw,linestyle=ls,marker=marker,ms=ms,alpha=alpha,color=color)
+            if strings is None:
+                strings=['x','y','z']
+            cax = PlotLabels(fig,ax,strings=strings + [''],fsize=fsize,cbarNorth=cbarNorth,fweight=fweight,
+                tickweight=tickweight,grid=grid,minorgrid=minorgrid,minorgridColor=minorgridColor)
+            ax.set_box_aspect(None, zoom=zoom)
+
+    #  Scalar data from volume
+    if len(dats)==4:
+        if figax is None:
+            fig = plt.figure(dpi=dpi)
+            ax = fig.add_subplot(111, projection='3d')
+
+        # Make meshgrid and flatten data
+        X, Y, Z = np.meshgrid(dats[0], dats[1], dats[2])
+        im = ax.scatter(X.flatten(),Y.flatten(),Z.flatten(),c=dats[3].flatten(),cmap=cmap,alpha=alpha,marker=marker)
+        ax.view_init(elev=elev, azim=azim, roll=roll)
+        if strings is None:
+            strings=['x','y','z','c']
+        PlotLabels(fig,ax,im=im,cax=cax,strings=strings,fsize=fsize,cbarNorth=cbarNorth,fweight=fweight,forceGrid=forceGrid,cbarPad=cbarPad,shrink=shrink,
+            tickweight=tickweight,cbarweight=cbarweight,cbarfsize=cbarfsize,grid=grid,minorgrid=minorgrid,minorgridColor=minorgridColor)
+        # ax.set_box_aspect(None, zoom=zoom)
+      
+    if xlim is not None:
+        ax.set_xlim(xlim[0], xlim[1])
+    if ylim is not None:
+        ax.set_ylim(ylim[0], ylim[1])
+    if zlim is not None:
+        ax.set_zlim(zlim[0], zlim[1])
+
+    plt.tight_layout()
+
+    # Check if overplotting
+    if figax is None:
+        if SaveAs is None:
+            plt.show()
+    # Always save if user asks
+    if SaveAs is not None:
+        fig.savefig(SaveAs,dpi=dpi,bbox_inches='tight')
+        plt.close(fig)
+
+    return [fig,ax,cax]
 
 def RunDemo():
 # ------------------
