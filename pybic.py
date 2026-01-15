@@ -38,6 +38,7 @@
 # cmap      -> adjust colormap                         [default :: 'viridis']
 # dealias   -> apply antialiasing (LP) filter         x[default :: False]
 # detrend   -> remove linear trend from data           [default :: False]
+# distlevel -> ylim for pdf plots                      [default :: None]
 # errlim    -> mean(fft) condition                     [default :: 1e15] 
 # filter    -> apply band-pass filter                 x[default :: 'none']
 # fontsize  -> figure label font size                  [default :: 14]
@@ -72,6 +73,8 @@
 # zpad      -> add zero-padding to end of time-series  [default :: False]
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 1/14/2026 -> Incorporated bootstrap estimates of b2 and B into PDF plots
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 12/05/2025 -> Fixed labeling for 3D trajectories, ie, ['x','y','z','col']
 # produces no colorbar when 'col' = '', added Plot() module function to
@@ -429,6 +432,7 @@ class BicAn:
     SizeWarn  = True
     BicVec    = [0,0,0]
     RandLevel = 1.0
+    DistLevel = 0.0
 
     PlotIt    = True
     CMap      = 'viridis'
@@ -1473,11 +1477,17 @@ class BicAn:
             intcnt = sum(cnt) * ( b2vec[1] - b2vec[0] )
             # exp dist -> (1/m)exp(-x/m)
             m = np.mean(g)
-            ax.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, color=self.LineColor[50], marker='x', linestyle='none', label='randomized')
+            ax.plot(b2vec, cnt/intcnt, linewidth=self.LineWidth, color=self.LineColor[50], marker='x', linestyle='none', label='Randomized')
             # More accurate distribution... Just more complicated! (Get to it later...)
             #semilogy(b2vec,(1/m)*exp(-b2vec/m).*(1-b2vec),'linewidth',self.LineWidth,'color','red'); 
             b2dist = (1/m)*np.exp(-b2vec/m)
             ax.plot(b2vec, b2dist, linewidth=self.LineWidth, label=r'$(1/\mu)e^{-b^2/\mu}$')
+
+            # Get bootstrap estimate
+            b2boot,_,_ = GetBispecBootstrap(dum,self.BicVec,self.LilGuy,Y[0],X[0],Ntrials=Ntrials)
+            cntboot,_  = np.histogram(b2boot, bins=b2bins, range=(0,b2lim) )
+            intcntboot = sum(cntboot) * ( b2vec[1] - b2vec[0] )
+            ax.plot(b2vec, cntboot/intcntboot,':',linewidth=self.LineWidth/2, color='C2', label=r'${\rm PDF}_{\rm bootstrap}$')
 
             ##N = len(self.tv)
             N = dum.shape[1]
@@ -1500,10 +1510,15 @@ class BicAn:
             # errb2 = (2 * b2true/N * (1-b2true)**3 )**0.5 ## <- This is from ElgarSebert (1989)
             ax.axvspan(b2true-errb2, b2true+errb2, facecolor='C2', alpha=0.2)
 
+            # Plot bootstrap error
+            ax.axvspan(np.mean(b2boot)-np.var(b2boot)**0.5, np.mean(b2boot)+np.var(b2boot)**0.5, facecolor='C2', alpha=0.2)
+            # ax.axvline(np.mean(b2boot)-np.var(b2boot)**0.5,linestyle=':', linewidth=self.LineWidth/2, color='C2')
+            # ax.axvline(np.mean(b2boot)+np.var(b2boot)**0.5,linestyle=':', linewidth=self.LineWidth/2, color='C2')
+
             # Calculated standard deviation
             ax.axvspan(b2true-(np.var(g))**0.5, b2true+(np.var(g))**0.5, facecolor='C2', alpha=0.2)
 
-            yrange = [0, b2dist[0]]
+            yrange = [0, b2dist[0]] if self.DistLevel==0 else [0,self.DistLevel]
             #yrange = [1e-3, b2dist[0]*10]
             ax.axvline(b2crit, linewidth=self.LineWidth, color='C1', label=r'$99.9\%$ CI')
             ax.axvline(b2true, linewidth=self.LineWidth, color='C2', label='Measured',)
@@ -1582,7 +1597,7 @@ class BicAn:
         return
 
 
-    def PlotPointOut(self,X,Y,IsFreq=False,PlotAll=False,SaveAs=None,CheckNeighbors=False):
+    def PlotPointOut(self,X,Y,IsFreq=False,PlotAll=False,SaveAs=None,CheckNeighbors=False,Ntrials=1000):
     # ------------------
     # Plot value of b^2 over time
     # ------------------
@@ -1599,7 +1614,7 @@ class BicAn:
             ax4 = plt.subplot(224)
 
             # print('input is...',X,Y)
-            self.PlotHelper('b2Prob',fig=fig,ax=ax1,X=X,Y=Y,IsFreq=IsFreq,CheckNeighbors=CheckNeighbors)
+            self.PlotHelper('b2Prob',fig=fig,ax=ax1,X=X,Y=Y,IsFreq=IsFreq,CheckNeighbors=CheckNeighbors,Ntrials=Ntrials)
 
             # For some reason this changes X and Y???
             # print('but now is...',X,Y)
@@ -1633,7 +1648,7 @@ class BicAn:
             self.PlotHelper('Phasor',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs)
 
         elif self.PlotType == 'bicoh':
-            self.PlotHelper('b2Prob',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs)
+            self.PlotHelper('b2Prob',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs,Ntrials=Ntrials)
 
         elif self.PlotType in ['abs','real','imag','angle']:
             self.PlotHelper('BvsTime',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs,CheckNeighbors=CheckNeighbors)
@@ -1674,7 +1689,7 @@ class BicAn:
         if SaveAs is None:
             plt.show()
             # Swapped this out after reading https://stackoverflow.com/questions/30880358/matplotlib-figure-not-updating-on-data-change
-            fig.canvas.draw()
+            ####REMOVE#### fig.canvas.draw()
         else:
             fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
             plt.close(fig)
@@ -2879,6 +2894,40 @@ def GetBispec(spec,v=[0,0,0],lilguy=1e-6,j=0,k=0,rando=False):
     B = B/len(Bi)
     return w,B,Bi 
 
+def GetBispecBootstrap(spec,v=[0,0,0],lilguy=1e-6,j=0,k=0,Ntrials=100):
+# ------------------
+# Calculates b2/bispectrum distribution via bootstrapping
+# ------------------
+
+    p1 = np.real( spec[abs(k),:,v[0]] ) + 1j*np.sign(k)*np.imag( spec[abs(k),:,v[0]] )
+    p2 = np.real( spec[abs(j),:,v[1]] ) + 1j*np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
+    s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
+
+    N = len(s)
+    Bboot = np.zeros(Ntrials,dtype=complex)
+    wboot = np.zeros(Ntrials)
+    Bi_meas = p1*p2*np.conj(s)
+
+    for k in range(Ntrials):
+
+        # Resample w/ replacement
+        r = (np.random.random(N) * N).astype(int)
+        dum1 = p1[r]
+        dum2 = p2[r]
+        dums = s[r]
+
+        Bi  = dum1*dum2*np.conj(dums)
+        e12 = abs(dum1*dum2)**2
+        e3  = abs(dums)**2
+
+        B   = sum(Bi)                 
+        E12 = sum(e12)            
+        E3  = sum(e3)                      
+
+        wboot[k] = (abs(B)**2)/(E12*E3+lilguy)
+        Bboot[k] = B/len(Bi)
+    
+    return wboot,Bboot,Bi_meas
 
 def GetPolySpec(spec,f,lilguy=1e-6,rando=False,v=[]):
 # ------------------
