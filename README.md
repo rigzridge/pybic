@@ -13,9 +13,11 @@ Alternatively, to analyze a time-series ``x`` sampled at ``fS``, use
 import pybic as bic
 b = bic.BicAn(x,samprate=fS)
 ```
-_More to come! Keep an eye out for our upcoming publication!_
+_More to come! Keep an eye out for our upcoming publication in Computer Physics Communications!_
 
-[Link to tutorial notebook](https://colab.research.google.com/drive/1GnJddGDVVIWK44B-_0Mfoe-tLKWoXFrb?usp=sharing)
+[Tutorial notebook](https://colab.research.google.com/drive/1GnJddGDVVIWK44B-_0Mfoe-tLKWoXFrb?usp=sharing)
+
+[``bic.Plot()`` documentation](https://colab.research.google.com/drive/1NJmjnkhD9wWd_uYRYDWSOEatzS_5Nzm3?usp=sharing)
 
 ## Theory
 
