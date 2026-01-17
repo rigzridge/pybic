@@ -74,6 +74,8 @@
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 1/15/2026 -> Added phase/amplitude test signals from paper + PlotPhaseDist()
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 1/14/2026 -> Incorporated bootstrap estimates of b2 and B into PDF plots
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 12/05/2025 -> Fixed labeling for 3D trajectories, ie, ['x','y','z','col']
@@ -599,7 +601,7 @@ class BicAn:
                 siglist = ['demo','classic','tone','noisy','2tone','3tone','4tone',
                             'line','circle','fast_circle','quad_couple','d3dtest','cube_couple',
                             'coherence','cross_2tone','cross_3tone','cross_circle','amtest','quad_couple_circle',
-                            'quad_couple_circle2','inst_freq_test',
+                            'quad_couple_circle2','inst_freq_test','linear_phase','phase_mod','linear_phase_am','phase_mod_am',
                             '3tone_short','circle_oversample','cross_3tone_short','helix']
                 if instr == 'input':
                     # Start getfile prompt
@@ -1411,6 +1413,7 @@ class BicAn:
     # Estimate and plot distribution of b2 for single point
     # ------------------
 
+        out = []
         doShow = False
         if fig is None:
             doShow = True
@@ -1500,7 +1503,7 @@ class BicAn:
             print('m = %f\nvar = %f\nnu = %f' % (m,np.var(g),2 * m**2/np.var(g)) )
 
             b2crit = -m*np.log(1 - cVal)
-            b2true,_,_ = GetBispec(self.sg,self.BicVec,self.LilGuy,Y[0],X[0],False)
+            b2true,_,_ = GetBispec(dum,self.BicVec,self.LilGuy,Y[0],X[0],False)
             
             b2noisebase = 10 if self.SpecType=='stft' else self.SampRate / min( abs(self.fv[X[0]]), abs(self.fv[Y[0]]), abs(self.fv[X[0]+Y[0]]) ) # vanMilligen PoP (1995)
             # 10 from Fackrell (1995), ElgarGuza (1988)
@@ -1509,6 +1512,8 @@ class BicAn:
             errb2 = N**(-0.5)
             # errb2 = (2 * b2true/N * (1-b2true)**3 )**0.5 ## <- This is from ElgarSebert (1989)
             ax.axvspan(b2true-errb2, b2true+errb2, facecolor='C2', alpha=0.2)
+
+            print('1/sqrt(N) = %f\nstd(rand) = %f\nstd(boot) = %f' % (errb2,np.var(g)**0.5,np.var(b2boot)**0.5) )
 
             # Plot bootstrap error
             ax.axvspan(np.mean(b2boot)-np.var(b2boot)**0.5, np.mean(b2boot)+np.var(b2boot)**0.5, facecolor='C2', alpha=0.2)
@@ -1520,7 +1525,7 @@ class BicAn:
 
             yrange = [0, b2dist[0]] if self.DistLevel==0 else [0,self.DistLevel]
             #yrange = [1e-3, b2dist[0]*10]
-            ax.axvline(b2crit, linewidth=self.LineWidth, color='C1', label=r'$99.9\%$ CI')
+            ax.axvline(b2crit, linewidth=self.LineWidth, color='C1', label=r'$99.9\%$ CL')
             ax.axvline(b2true, linewidth=self.LineWidth, color='C2', label='Measured',)
             ax.axvline(b2noise, linewidth=self.LineWidth, color='C3', label='Noise floor')
 
@@ -1528,6 +1533,8 @@ class BicAn:
 
             ax.set_xlim(0,1)
             ax.set_ylim(yrange[0],yrange[1])
+
+            out = [np.mean(b2boot),np.var(b2boot)**0.5,b2crit,b2noise]
 
         elif whatPlot=='BvsTime':
 
@@ -1594,10 +1601,10 @@ class BicAn:
             else:
                 fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
                 plt.close(fig)
-        return
+        return out
 
 
-    def PlotPointOut(self,X,Y,IsFreq=False,PlotAll=False,SaveAs=None,CheckNeighbors=False,Ntrials=1000):
+    def PlotPointOut(self,X,Y,IsFreq=False,PlotAll=False,SaveAs=None,CheckNeighbors=False,Ntrials=200):
     # ------------------
     # Plot value of b^2 over time
     # ------------------
@@ -1687,9 +1694,9 @@ class BicAn:
 
         plt.tight_layout()
         if SaveAs is None:
+            fig.canvas.draw()
             plt.show()
             # Swapped this out after reading https://stackoverflow.com/questions/30880358/matplotlib-figure-not-updating-on-data-change
-            ####REMOVE#### fig.canvas.draw()
         else:
             fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
             plt.close(fig)
@@ -2202,6 +2209,41 @@ class BicAn:
         return X
 
 
+    def PlotPhaseDist(self,j,k,ylim=1,SaveAs=None):
+    # ------------------
+    # Plot phase distribution of single point
+    # ------------------
+        fig,ax = plt.subplots(dpi=self.PlotDPI)
+
+        N = 16
+        width = 0.1
+        xlim = [-np.pi,np.pi]
+        x = np.linspace(xlim[0],xlim[1],N)
+        b2,B,Bi = GetBispec(self.sg,j=j,k=k)
+        cnt0,_  = np.histogram(np.angle(Bi),
+                              bins=N, range=(xlim[0],xlim[1]),density=not True )
+        cntw,_  = np.histogram(np.angle(Bi),
+                              bins=N, range=(xlim[0],xlim[1]),
+                               weights=np.abs(Bi)**2,density=not True )
+        intcnt0 = sum(cnt0) * ( x[1] - x[0] )/np.pi
+        intcntw = sum(cntw) * ( x[1] - x[0] )/np.pi
+
+        ax.bar(x/np.pi-width/10,cnt0/sum(cnt0),width,alpha=0.5)
+        ax.bar(x/np.pi+width/10,cntw/sum(cntw),width,alpha=0.5)
+        ax.set_ylim(0,ylim)
+        ax.set_xlim(-1,1)
+        PlotLabels(fig,ax,[r'$\beta/\pi$',r'$p(\beta)$'],fsize=self.FontSize)
+        plt.tight_layout()
+        if SaveAs is None:
+            plt.show()
+        else:
+            fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
+            plt.close(fig)
+
+        # print(sum(cnt0),intcnt0,sum(cntw),intcntw)
+        return [x,cnt0,cntw]
+
+
 # Module methods
 
 def FileDialog():
@@ -2444,7 +2486,28 @@ def TestSignal(whatsig,tend=100,noisy=2,fS=200,f1=19,f2=45):
 
         # 
         print('Not an option yet!!!')
-
+    elif dum == 'linear_phase':
+        t = np.arange(0,tend,1/fS)
+        phi = 2 * np.pi * t/tend
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
+        inData = np.cos(2*np.pi*f2*t + phi) + np.cos(2*np.pi*f1*t) + np.cos(2*np.pi*(f1+f2)*t) + nz/2
+    elif dum == 'phase_mod':
+        t = np.arange(0,tend,1/fS)
+        phi = np.pi * (2*t/tend + (1/2) * np.sin(2*np.pi*t / tend)) # Phase osc. 
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
+        inData = np.cos(2*np.pi*f2*t + phi) + np.cos(2*np.pi*f1*t) + np.cos(2*np.pi*(f1+f2)*t) + nz/2
+    elif dum == 'linear_phase_am':
+        t = np.arange(0,tend,1/fS)
+        A = (1-0.9*np.sin(np.pi*t/tend)**2)
+        phi = 2 * np.pi * t/tend 
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
+        inData = np.cos(2*np.pi*f2*t + phi) + np.cos(2*np.pi*f1*t) + A * np.cos(2*np.pi*(f1+f2)*t) + nz/2
+    elif dum == 'phase_mod_am':
+        t = np.arange(0,tend,1/fS)
+        A = (1-0.9*np.cos(np.pi*t/tend)**2)
+        phi = np.pi * (-1/2 + 2*t/tend + (1/np.pi) * np.sin(2*np.pi*t / tend )) # Phase osc.
+        nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
+        inData = np.cos(2*np.pi*f2*t + phi) + np.cos(2*np.pi*f1*t) + A * np.cos(2*np.pi*(f1+f2)*t) + nz/2
     elif dum == 'line':
         inData,t,_ = SignalGen(fS,tend,fx=f1,Ay=1,fy=f2,Afy=10,Az=1,Ff=1/20)
     elif dum in ['circle','circle_oversample']:
