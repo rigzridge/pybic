@@ -2,7 +2,9 @@
 
 This module implements _Bicoherence Analyzer_ in Python!
 
-To get started, place the ``pybic.py`` file in your desired directory, and try
+## Quick start
+
+To get rolling, place the ``pybic.py`` file in your desired directory, and try
 ```python
 import pybic as bic
 b = bic.BicAn('demo')
@@ -13,11 +15,20 @@ Alternatively, to analyze a time-series ``x`` sampled at ``fS``, use
 import pybic as bic
 b = bic.BicAn(x,samprate=fS)
 ```
-_More to come! Keep an eye out for our upcoming publication in Computer Physics Communications!_
 
-[Tutorial notebook](https://colab.research.google.com/drive/1GnJddGDVVIWK44B-_0Mfoe-tLKWoXFrb?usp=sharing)
+## Tutorials
+
+For convenience, the following Jupyter notebooks demonstrate many of the features of PyBic:
+
+[Guided tour](https://colab.research.google.com/drive/1GnJddGDVVIWK44B-_0Mfoe-tLKWoXFrb?usp=sharing)
 
 [``bic.Plot()`` documentation](https://colab.research.google.com/drive/1NJmjnkhD9wWd_uYRYDWSOEatzS_5Nzm3?usp=sharing)
+
+## Citing our work
+
+To reference PyBic/BicAn, please refer to our article in Computer Physics Communications: [BicAn: An integrated, open-source framework for polyspectral analysis](https://doi.org/10.1016/j.cpc.2026.110097).
+
+_Note that the preprint is available above!_
 
 ## Theory
 
@@ -29,3 +40,7 @@ and $\langle ... \rangle$ denotes time averaging.
 ### The (squared) bicoherence spectrum
 $b^2_{xyz}(f_1,f_2) = \frac{|B_{xyz}(f_1,f_2)|^2 }{ \left\langle|X(f_1)Y(f_2)|^2\right\rangle \left\langle|Z(f_1+f_2)|^2\right\rangle + \varepsilon }$,
 where $\varepsilon$ is a small number meant to prevent 0/0 = ``NaN`` catastrophe.
+
+## Contact
+
+**Please reach out with any questions to rigzridge@gmail.com!**
