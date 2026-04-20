@@ -1,0 +1,20 @@
+# Simple package names (installs latest version)
+sphinx==5.3.0
+sphinx_rtd_theme==1.1.1
+sphinx-notfound-page==1.0.2
+
+# Precise versioning (Recommended for stability)
+# numpy == 1.26.4
+# pandas == 2.2.1
+
+# Minimum version required
+# matplotlib >= 3.8.0
+
+# Compatible version (allows minor updates but not breaking changes)
+# django ~= 5.0.3
+
+# Installing from a specific GitHub repository
+# requests @ git+https://github.com
+
+# Including another requirements file (e.g., for base packages)
+# -r base-requirements.txt
