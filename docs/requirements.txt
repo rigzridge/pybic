@@ -1,11 +1,14 @@
 # Simple package names (installs latest version)
-sphinx==5.3.0
-sphinx_rtd_theme==1.1.1
-sphinx-notfound-page==1.0.2
+sphinx
+sphinx_rtd_theme
+sphinx-notfound-page
 
 # Precise versioning (Recommended for stability)
 # numpy == 1.26.4
 # pandas == 2.2.1
+# sphinx==5.3.0
+# sphinx_rtd_theme==1.1.1
+# sphinx-notfound-page==1.0.2
 
 # Minimum version required
 # matplotlib >= 3.8.0
