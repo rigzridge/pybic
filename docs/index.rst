@@ -27,6 +27,13 @@ To plot some stuff, you can use the ``pybic.Plot()`` function:
 
    Add in base units?
 
+.. autosummary::
+   :toctree: generated
+
+   google_example
+
+Did it work?
+
 Contents
 --------
 
