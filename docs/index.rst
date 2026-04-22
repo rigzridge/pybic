@@ -5,43 +5,27 @@ Adapted from tutorial here:
 
 https://docs.readthedocs.io/en/stable/tutorial/
 
+.. autosummary::
+
+   pybic
+
 Plotting
 ----------------
 
-To plot some stuff, you can use the ``pybic.Plot()`` function:
-
-.. py:function:: pybic.Plot()
-
-   Return a list of random ingredients as strings.
-
-   :param kind: Optional "kind" of ingredients.
-   :type kind: list[str] or None
-   :return: The ingredients list.
-   :rtype: list[str]
+To plot some stuff, you can use the :func:`pybic.Plot` function:
 
 .. note::
 
-   This project is under active development.
+   While the :mod:`pybic` module is relatively complete,
+   this documentation is under active development.
 
 .. todo:: 
 
-   Add in base units?
+   Include base units for time-series
 
-.. autosummary::
-   :toctree: generated
-
-   example_google
-
-Did it work?
-
-Contents
---------
 
 .. toctree::
+   :hidden:
 
    Home <self>
-
-.. autosummary::
-   :toctree: generated
-
-   pybic
+   api

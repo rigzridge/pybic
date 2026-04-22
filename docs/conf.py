@@ -6,6 +6,10 @@ author = 'Greg Riggs'
 # Version #
 release = '2.1.0'
 
+import os
+import sys
+sys.path.insert(0, os.path.abspath('..'))
+
 # -- General configuration ---------------------------------------------------
 
 # Sphinx extension modules
@@ -19,14 +23,22 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.napoleon',
     'sphinx.ext.todo',
+    'nbsphinx',
 ]
+source_suffix = ['.rst', '.md']
 
 intersphinx_mapping = {
-    "rtd": ("https://docs.readthedocs.io/en/stable/", None),
-    "python": ("https://docs.python.org/3/", None),
-    "sphinx": ("https://www.sphinx-doc.org/en/master/", None),
+    'rtd': ('https://docs.readthedocs.io/en/stable/', None),
+    'python': ('https://docs.python.org/3/', None),
+    'sphinx': ('https://www.sphinx-doc.org/en/master/', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
+    'matplotlib': ('https://matplotlib.org/stable/', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/', None),
+    
 }
-intersphinx_disabled_domains = ["std"]
+intersphinx_disabled_domains = ['std']
+
+autodoc_mock_imports = ['os','numpy','matplotlib','scipy','tkinter','datetime','mpl_toolkits']
 
 # Should generate autosummary?
 autosummary_generate = True

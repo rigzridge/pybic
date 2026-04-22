@@ -2,6 +2,7 @@
 sphinx
 sphinx_rtd_theme
 sphinx-notfound-page
+nbsphinx
 
 # Precise versioning (Recommended for stability)
 # numpy == 1.26.4
