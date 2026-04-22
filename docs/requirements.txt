@@ -4,6 +4,8 @@ sphinx_rtd_theme
 sphinx-notfound-page
 nbsphinx
 
+matplotlib
+
 # Precise versioning (Recommended for stability)
 # numpy == 1.26.4
 # pandas == 2.2.1

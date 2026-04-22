@@ -5,10 +5,6 @@ Adapted from tutorial here:
 
 https://docs.readthedocs.io/en/stable/tutorial/
 
-.. autosummary::
-
-   pybic
-
 Plotting
 ----------------
 
@@ -29,3 +25,8 @@ To plot some stuff, you can use the :func:`pybic.Plot` function:
 
    Home <self>
    api
+
+.. autosummary::
+   :toctree: generated
+
+   pybic

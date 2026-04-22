@@ -9,6 +9,7 @@ release = '2.1.0'
 import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
+import matplotlib.pyplot as plt
 
 # -- General configuration ---------------------------------------------------
 
@@ -24,6 +25,7 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.todo',
     'nbsphinx',
+    # 'matplotlib.sphinxext.plot_directive',
 ]
 source_suffix = ['.rst', '.md']
 

@@ -3,12 +3,12 @@ API
 
 The central class:
 
-
-
 .. autosummary::
    :toctree: generated
 
    pybic.BicAn
+
+Time-frequency representations
 
 .. autosummary::
    :toctree: generated
