@@ -1,10 +1,7 @@
-Template for the Read the Docs tutorial
+PyBic documentation!
 =======================================
 
-This GitHub template includes fictional Python library
-with some basic Sphinx docs.
-
-Read the tutorial here:
+Adapted from tutorial here:
 
 https://docs.readthedocs.io/en/stable/tutorial/
 
@@ -21,3 +18,23 @@ To plot some stuff, you can use the ``pybic.Plot()`` function:
    :type kind: list[str] or None
    :return: The ingredients list.
    :rtype: list[str]
+
+.. note::
+
+   This project is under active development.
+
+.. todo:: 
+
+   Add in base units?
+
+Contents
+--------
+
+.. toctree::
+
+   Home <self>
+
+.. autosummary::
+   :toctree: generated
+
+   pybic
