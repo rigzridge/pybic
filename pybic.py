@@ -15,15 +15,6 @@ Example:
 Section breaks are created by resuming unindented text. Section breaks
 are also implicitly created anytime a new section starts.
 
-Attributes:
-    module_level_variable1 (int): Module level variables may be documented in
-        either the ``Attributes`` section of the module docstring, or in an
-        inline docstring immediately following the variable.
-
-        Either form is acceptable, but the two should not be mixed. Choose
-        one convention to document module level variables and be consistent
-        with it.
-
 Todo:
     * For module TODOs
     * You have to also use ``sphinx.ext.todo`` extension
@@ -421,10 +412,25 @@ plt.rcParams['mathtext.fontset'] = 'cm'
 # Define classes for bispec script
 
 class BicAn:
-# Bicoherence analysis class for DSP
+    """The summary line for a class docstring should fit on one line.
+
+    If the class has public attributes, they may be documented here
+    in an ``Attributes`` section and follow the same formatting as a
+    function's ``Args`` section. Alternatively, attributes may be documented
+    inline with the attribute's declaration (see __init__ method below).
+
+    Properties created with the ``@property`` decorator should be documented
+    in the property's getter method.
+
+    Attributes:
+        attr1 (str): Description of `attr1`.
+        attr2 (:obj:`int`, optional): Description of `attr2`.
+
+    """
     
     # Attributes
     Date      = datetime.now()
+    """:class:`datetime.datetime`:  Date when :class:`~pybic.BicAn` is run"""
     MaxRes    = 0.
     Samples   = 0
     NFreq     = 0
@@ -438,6 +444,7 @@ class BicAn:
 
     Note      = ' '
     Raw       = []
+    """:class:`~numpy.ndarray`: Raw data"""
     Processed = []
     InstFreq  = []
     History   = ' '
@@ -530,9 +537,25 @@ class BicAn:
 
     # Class methods
     def __init__(self,inData,**kwargs):
-    # ------------------
-    # Constructor
-    # ------------------ 
+        """Example of docstring on the __init__ method.
+
+        The __init__ method may be documented in either the class level
+        docstring, or as a docstring on the __init__ method itself.
+
+        Either form is acceptable, but the two should not be mixed. Choose one
+        convention to document the __init__ method and be consistent with it.
+
+        Note:
+            Do not include the `self` parameter in the ``Args`` section.
+            :attr:`CMap`
+
+        Args:
+            param1 (str): Description of `param1`.
+            param2 (:obj:`int`, optional): Description of `param2`. Multiple
+                lines are supported.
+            param3 (:obj:`list` of :obj:`str`): Description of `param3`.
+
+        """
         self.ParseInput(inData,kwargs)
 
         if self._RunBicAn:
@@ -591,6 +614,7 @@ class BicAn:
     # Dependent properties
     @property
     def MaxRes(self):  # Maximum resolution
+        """float: Maximum resolution """
         return self.SampRate / self.SubInt if self.SpecType=='stft' else self.SampRate / self.Samples
 
     @property
@@ -823,9 +847,25 @@ class BicAn:
 
 
     def SpectroWavelet(self):
-    # ------------------
-    # Wavelet method
-    # ------------------
+        """Example of docstring on the __init__ method.
+
+        The __init__ method may be documented in either the class level
+        docstring, or as a docstring on the __init__ method itself.
+
+        Either form is acceptable, but the two should not be mixed. Choose one
+        convention to document the __init__ method and be consistent with it.
+
+        Note:
+            Do not include the `self` parameter in the ``Args`` section.
+            :attr:`CMap`
+
+        Args:
+            param1 (str): Description of `param1`.
+            param2 (:obj:`int`, optional): Description of `param2`. Multiple
+                lines are supported.
+            param3 (:obj:`list` of :obj:`str`): Description of `param3`.
+
+        """
         if self.Sigma == 0: # Check auto
             #self.Sigma = np.pi*self.Samples/self.SampRate
             self.Sigma = np.pi
@@ -1050,9 +1090,20 @@ class BicAn:
 
     ## Plot methods
     def PlotPowerSpec(self,*args,vLim=[]):
-    # ------------------
-    # Plot power spectrum
-    # ------------------
+        """Plots power spectrum
+
+        `PEP 484`_ type annotations are supported. If attribute, parameter, and
+        return types are annotated according to `PEP 484`_, they do not need to be
+        included in the docstring:
+
+        Args:
+            *args (int): The first parameter.
+            vLim (list)
+
+        .. _PEP 484:
+            https://www.python.org/dev/peps/pep-0484/
+
+        """
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
         else:
@@ -2766,9 +2817,30 @@ def CalcHistVsT(sig,samprate=1.,subint=512,step=256,t0=0,binMax=1.,Nbins=200):
 
 
 def ApplyCWT(sig,samprate=1.0,sigma=3.14,limFreq=2,alphaExp=0.5):
-# ------------------
-# Wavelet static method
-# ------------------
+    """Calculate continuous wavelet transform (CWT) of time-series
+
+    blam!
+
+    Args:
+        sig (ndarray): Time series to be analyzed.
+        samprate (float): Sampling rate.
+        sigma (float): Time-frequency adjustment.
+        limFreq (int): Frequency limit division.
+        alphaExp (float): Alpha exponent.
+
+    Returns:
+        list[Union[:class:`~numpy.ndarray`, int]]: CWT + other stuff
+
+        Things are things
+
+        ``CWT`` is float
+
+    Output list includes
+
+    .. _PEP 484:
+        https://www.python.org/dev/peps/pep-0484/
+
+    """
     Nsig,N = sig.shape
     nyq    = Nsig//2
 
@@ -3150,9 +3222,22 @@ def ApplyDetrend(y):
 
 
 def ScaleToString(scale):
-# ------------------
-# Time/freq scaling
-# ------------------
+    """Example function with types documented in the docstring.
+
+    `PEP 484`_ type annotations are supported. If attribute, parameter, and
+    return types are annotated according to `PEP 484`_, they do not need to be
+    included in the docstring:
+
+    Args:
+        scale (int): The first parameter.
+
+    Returns:
+        str: The return value. True for success, False otherwise.
+
+    .. _PEP 484:
+        https://www.python.org/dev/peps/pep-0484/
+
+    """
     tags = ['f',[],[],'p',[],[],'n',[],[],'$\mu$',[],[],'m','c','d','', [],'h','k',[],[],'M',[],[],'G',[],[],'T',[],[],'P',[],[],'E']
     s = tags[15+scale]
     return s   
