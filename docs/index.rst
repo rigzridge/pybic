@@ -30,7 +30,7 @@ To plot some stuff, you can use the ``pybic.Plot()`` function:
 .. autosummary::
    :toctree: generated
 
-   google_example
+   example_google
 
 Did it work?
 
