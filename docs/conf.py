@@ -13,10 +13,14 @@ release = '2.1.0'
 # 'sphinx.ext.napoleon' - for Google/NumPy style docstrings
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
     'sphinx.ext.napoleon',
     'sphinx.ext.todo',
 ]
+
+# Should generate autosummary?
+autosummary_generate = True
 
 # Include TODO sections
 todo_include_todos = True
