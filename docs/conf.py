@@ -10,6 +10,8 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
 import matplotlib.pyplot as plt
+import inspect
+import pybic
 
 # -- General configuration ---------------------------------------------------
 
@@ -25,9 +27,28 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.todo',
     'nbsphinx',
+    'sphinx.ext.linkcode',
     # 'matplotlib.sphinxext.plot_directive',
 ]
 source_suffix = ['.rst', '.md']
+
+def linkcode_resolve(domain, info):
+    if domain != 'py' or not info['module']:
+        return None
+    
+    module = info['module']
+    fxn = info['fullname']
+    github_repo = "https://github.com/rigzridge/pybic/blob/main"
+
+    try:
+        # Try to get source code of function or method
+        source, lineno = inspect.getsourcelines(eval('%s.%s' % (module, fxn)))
+    except:
+        # Attributes throw errors, just link to BicAn
+        source, lineno = inspect.getsourcelines(pybic.BicAn)
+    lineno = '#L%d' % lineno
+
+    return '%s/%s.py%s' % (github_repo, module, lineno)
 
 intersphinx_mapping = {
     'rtd': ('https://docs.readthedocs.io/en/stable/', None),
