@@ -4,7 +4,6 @@ sphinx_rtd_theme
 sphinx-notfound-page
 nbsphinx
 
-os
 numpy
 matplotlib
 scipy
