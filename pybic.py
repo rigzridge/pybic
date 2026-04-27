@@ -1,103 +1,83 @@
 # -*- coding: utf-8 -*-
-"""Example Google style docstrings.
+"""Polyspectral analysis toolkit for Python.
 
-This module demonstrates documentation as specified by the `Google Python
-Style Guide`_. Docstrings may extend over multiple lines. Sections are created
-with a section header and a colon followed by a block of indented text.
+
+.. code-block:: text
+
+    ______     ______ _      
+    | ___ \    | ___ (_)          
+    | |_/ /   _| |_/ /_  ___      
+    |  __/ | | | ___ \ |/ __|               v2.1 (c) 2022-2026
+    | |  | |_| | |_/ / | (__                
+    \_|   \__, \____/|_|\___|              G. Riggs & T. Matheny
+           __/ |                           
+          |___/             
+
+**PyBic** is an open-source module specializing in signal processing, 
+with particular emphasis on polyspectral analysis. 
+
+.. code-block:: text
+
+    The bispectrum
+
+    B_xyz(f1,f2) = < X(f1)Y(f2)Z(f1+f2)* >, 
+
+    where x,y,z are time series with corresponding Fourier transforms 
+    X,Y,Z, and <...> denotes averaging in time.
+
+    The (squared) bicoherence spectrum
+
+    b^2_xyz(f1,f2) =           |B_xyz(f1,f2)|^2
+                             --------------------
+                   ( <|X(f1)Y(f2)|^2> <|Z(f1+f2)|^2> + eps ),
+
+    where eps is a small number meant to prevent 0/0 = NaN catastrophe
 
 Example:
-    Examples can be given using either the ``Example`` or ``Examples``
-    sections. Sections support any reStructuredText formatting, including
-    literal blocks::
-
         $ python example_google.py
 
-Section breaks are created by resuming unindented text. Section breaks
-are also implicitly created anytime a new section starts.
+.. code-block:: python
+
+    import pybic as bic
+    b = bic.BicAn('demo')
+
+Minimal test:
+
+>>> import pybic as bic
+>>> b = bic.BicAn('demo')
 
 Todo:
-    * For module TODOs
-    * You have to also use ``sphinx.ext.todo`` extension
+	* Add colormap picker in PlotGUI() with SHIFT + c, say (none)
+	* Swap out matplotlib widgets for full tkinter GUI =^x (some)
+	* Figure out setter functions (some)
+	* Configure warnings (none)
+	* Implement some kind of check for Raw data! Should eliminate string, etc. (done)
+	* Fix colorbar axes overplotting each refresh (done)
+	* Fix issue with colorbar labels when calling RefreshGUI() (done)
+	* Add buttons and callbacks from Matlab (some)
+	* Swap out "dum" variables for more literate ones
+	* Comment the code!!! (none)
+	* Fix butt-ugly inputs to PlotPointOut children! (done)
+	* Flag for base units (maybe not based in time, say)
+	* Antialiased option! (none)
+	* Video output (none)
+
+See `Google Python Style Guide`_!
 
 .. _Google Python Style Guide:
    http://google.github.io/styleguide/pyguide.html
 
 """
-#XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-#      ______     ______ _      
-#      | ___ \    | ___ (_)          Bicoherence Analysis Module for Python
-#      | |_/ /   _| |_/ /_  ___      --------------------------------------
-#      |  __/ | | | ___ \ |/ __|               v2.0 (c) 2022-2025
-#      | |  | |_| | |_/ / | (__                        
-#      \_|   \__, \____/|_|\___|              G. Riggs & T. Matheny
-#             __/ |                      
-#            |___/                       WVU Dept. of Physics & Astronomy
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-#XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-# The Bispectrum
-# B_xyz(f1,f2) = < X(f1)Y(f2)Z(f1+f2)* >, where x,y,z are time series with 
-# corresponding Fourier transforms X,Y,Z, and <...> denotes averaging.
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-#XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-# The (squared) Bicoherence spectrum
-# b^2_xyz(f1,f2) =           |B_xyz(f1,f2)|^2
-#                          --------------------
-#                ( <|X(f1)Y(f2)|^2> <|Z(f1+f2)|^2> + eps ),
-# where eps is a small number meant to prevent 0/0 = NaN catastrophe
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-#XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-# Inputs
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-# inData    -> time-series [numpy.array (N,)/(N,1)/(N,2)/(N,3) & transpose]
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# additional options... (see below for instructions)
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# alphaexp  -> prefactor exponent for CWT              [default :: 0.5]
-# autoscale -> autoscaling in figures                 x[default :: False]
-# bicoftime -> updates bicoherence in PlotGUI          [default :: False]
-# bispectro -> computes bispectrogram                 x[default :: False]
-# calccoi   -> estimate cone of influence (COI)        [default :: False]
-# cbarnorth -> control colorbar location               [default :: True]
-# coilim    -> cone of influence decay criterion       [default :: -3.0]
-# cmap      -> adjust colormap                         [default :: 'viridis']
-# dealias   -> apply antialiasing (LP) filter         x[default :: False]
-# detrend   -> remove linear trend from data           [default :: False]
-# distlevel -> ylim for pdf plots                      [default :: None]
-# errlim    -> mean(fft) condition                     [default :: 1e15] 
-# filter    -> apply band-pass filter                 x[default :: 'none']
-# fontsize  -> figure label font size                  [default :: 14]
-# freqres   -> desired frequency resolution [Hz]       [default :: 0]
-# fscale    -> scale for plotting frequencies          [default :: 0]
-# incoi     -> precalculated cone of influence         [default :: np.array([])]
-# instfreqflag -> GUI click plots inst. freq.          [default :: False]
-# justspec  -> true for just spectrogram               [default :: False]
-# lilguy    -> set epsilon                             [default :: 1e-6]
-# limfreq   -> limits fourier bins to nyq/limfreq      [default :: 2.0]
-# normbic   -> normalize bicoherence plots to [0,1]    [default :: False]
-# note      -> optional string for documentation       [default :: ' '] 
-# plotdpi   -> figure dots per inch (DPI)              [default :: 150]
-# plotit    -> start plotting tool when done           [default :: False]
-# plotsig   -> select channel in spectrogram           [default :: 0]
-# plotslice -> select subinterval for plotting         [default :: None]
-# plottype  -> set desired plottable                   [default :: 'bicoh']
-# randlevel -> sets phase random for uncert. quant.    [default :: 1.0]
-# samprate  -> sampling rate in Hz                     [default :: 1.0]
-# sigma     -> parameter for wavelet spectrum          [default :: 0]
-# spectype  -> set desired time-freq. method           [default :: 'stft']
-# step      -> step size for Welch method in samples   [default :: 512]
-# subint    -> subinterval size in samples             [default :: 128]
-# sizewarn  -> warning for matrix size                 [default :: True]
-# smooth    -> smooths FFT by n samples               x[default :: 1]
-# tlinecol  -> colormap for timeline plots             [default :: 'twilight']
-# trispec   -> estimates trispectrum                   [default :: False]
-# tscale    -> scale for plotting time                 [default :: 0]
-# tzero     -> initial time                            [default :: 0.0]
-# verbose   -> allow printing of info structure        [default :: False]
-# window    -> select window function                  [default :: 'hann']
-# zpad      -> add zero-padding to end of time-series  [default :: False]
+
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 4/22/2026 -> Big changes to github repo, getting everything switched to 
+# docstrings for conveniently generated documentation from ReadTheDocs
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 2/26/2026 -> Paper in Computer Physics Communications available online!
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 1/18/2026 -> Accepts more general colormaps, ie, mpl.colors.ListedColormap
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 1/15/2026 -> Added phase/amplitude test signals from paper + PlotPhaseDist()
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -369,26 +349,6 @@ Todo:
 # 7/01/2022 --> First "code." 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-# THINGS TO DO! [** = not yet, *_ = kind of, __ = probably done]
-# ** Add colormap picker in PlotGUI() with SHIFT + c, say
-# *_ Swap out matplotlib widgets for full tkinter GUI =^x
-# *_ Figure out setter functions
-# ** Configure warnings
-# __ Implement some kind of check for Raw data! Should eliminate string, etc.
-# __ Fix colorbar axes overplotting each refresh
-# __ Fix issue with colorbar labels when calling RefreshGUI()
-# *_ Add buttons and callbacks from Matlab
-# ** Swap out "dum" variables for more literate ones
-# ** Comment the code!!!
-# __ Fix butt-ugly inputs to PlotPointOut children!
-# ** Flag for base units (maybe not based in time, say)
-# ** Antialiased option!
-
-# Methods left:
-#{
-# MakeMovie
-# etc.
-#}
 
 # Import dependencies
 import os
@@ -396,6 +356,7 @@ import time
 # import warnings
 import numpy as np
 from matplotlib import cm
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from datetime import datetime
@@ -412,7 +373,7 @@ plt.rcParams['mathtext.fontset'] = 'cm'
 # Define classes for bispec script
 
 class BicAn:
-    """The summary line for a class docstring should fit on one line.
+    """Main class of ``pybic`` module
 
     If the class has public attributes, they may be documented here
     in an ``Attributes`` section and follow the same formatting as a
@@ -422,15 +383,11 @@ class BicAn:
     Properties created with the ``@property`` decorator should be documented
     in the property's getter method.
 
-    Attributes:
-        attr1 (str): Description of `attr1`.
-        attr2 (:obj:`int`, optional): Description of `attr2`.
-
     """
     
     # Attributes
     Date      = datetime.now()
-    """:class:`datetime.datetime`:  Date when :class:`~pybic.BicAn` is run"""
+    """:class:`datetime.datetime`:  Date when :class:`~pybic.BicAn` is initialized"""
     MaxRes    = 0.
     Samples   = 0
     NFreq     = 0
@@ -446,43 +403,76 @@ class BicAn:
     Raw       = []
     """:class:`~numpy.ndarray`: Raw data"""
     Processed = []
+    """:class:`~numpy.ndarray`: Processed data"""
     InstFreq  = []
     History   = ' '
 
     SampRate  = 1.
+    """float: Sampling rate in Hz"""
     FreqRes   = 0.
+    """float: Frequency resolution in Hz"""
     SubInt    = 512
+    """float: Subinterval size in samples"""
     Step      = 128
+    """float: STFT step in samples"""
     LimFreq   = 2.
-    Window    = 'hann'       
+    """float: Overall frequency division for TFR"""
+    Window    = 'hann'   
+    """str: Window function"""    
     Sigma     = 0.
+    """float: CWT sigma parameter"""
     AlphaExp  = 0.5
+    """float: CWT alpha exponent"""
     CalcCOI   = False
+    """bool: Calculate cone of influence (COI)"""
     COILim    = -3.0
+    """float: COI logarithmic cutoff"""
     InCOI     = np.array([])
+    """:class`~numpy.ndarray`: Input COI"""
     JustSpec  = False
+    """bool: Only calculate TFR"""
     SpecType  = 'stft'
+    """str: Desired TFR"""
     CalcHist  = False
+    """bool: Calculate histogram from time series"""
     Bispectro = False
+    """bool: Calculate bispectrogram"""
 
     ErrLim    = 1e15
+    """float: Limit for TFR"""
     FScale    = 0
+    """int: Log scale for frequency labels"""
     TScale    = 0
+    """int: Log scale for time labels"""
     Filter    = 'none' 
+    """str: Desired filter"""
     Smooth    = 1  
+    """int: Smoothing factor in samples"""
     Epsilon   = 1e-6
+    """float: Small value in polycoherence calculations"""
     LilGuy    = 1e-6
+    """float: Duplicate of BicAn.Epsilon fot back-compat"""
     SizeWarn  = True
+    """bool: Display warning for large TFRs"""
     BicVec    = [0,0,0]
+    """list: Integers representing desired time series"""
     RandLevel = 1.0
+    """float: Level of randomization in uncertainty analysis"""
     DistLevel = 0.0
+    """float: ???"""
 
     PlotIt    = True
+    """bool: Plot after analysis is complete"""
     CMap      = 'viridis'
+    """str: Colormap for plots"""
     CbarNorth = True
+    """bool: Place colorbar above plot"""
     PlotType  = 'bicoh'
+    """str: Desired plottable"""
     ScaleAxes = 'manual'
+    """str: Desired axis scaling"""
     TickLabel = 'normal'
+    """str: """
     TLineCol  = 'twilight'
     LineWidth = 2
     FontSize  = 14
@@ -632,7 +622,10 @@ class BicAn:
 
     @property
     def LineColor(self): # For coloring plots
-        return eval('cm.%s( np.linspace(0,1,256) )[:,0:3]' % self.CMap)
+        if isinstance(self.CMap,mpl.colors.ListedColormap):
+            return self.CMap(np.linspace(0,1,256))[:,0:3]
+        else:
+            return eval('cm.%s( np.linspace(0,1,256) )[:,0:3]' % self.CMap)
 
 
     def ParseInput(self,inData,kwargs):
@@ -2086,6 +2079,30 @@ class BicAn:
         else: # Lorentzian
             um = (1 + (freq/fband)**2 )**-1 * amp
 
+        ##### Phase histogram
+        N = 100
+        width = 0.1
+        fig,ax = plt.subplots(dpi=self.PlotDPI)
+        flim = fwindow/10**self.FScale
+        f = np.linspace(-flim,flim,N)
+        cnt,_  = np.histogram(freq,
+                              bins=N, range=(-flim,flim),
+                               weights=amp**1,density=not True )
+        intcnt = sum(cnt) * ( f[1] - f[0] )
+
+        SaveAs = None
+        ax.bar(f,cnt/sum(cnt)*100,width,alpha=1)
+        # ax.set_ylim(0,ylim)
+        ax.set_xlim(-flim,flim)
+        PlotLabels(fig,ax,[r'$\Delta f_{\rm inst}~{\rm [%sHz]}$' % (ScaleToString(self.FScale)), r'${\rm \%}$'],fsize=self.FontSize)
+        plt.tight_layout()
+        if SaveAs is None:
+            plt.show()
+        else:
+            fig.savefig(SaveAs,dpi=self.PlotDPI,bbox_inches='tight')
+            plt.close(fig)
+        #######
+
         if plot:
             fig,ax = plt.subplots(dpi=self.PlotDPI)
 
@@ -2396,7 +2413,7 @@ def InstFreqZeroCross(x,dt=1.0,crossType='both',Ninterp=None,T0=0.0):
     return T[np.sort(loc)], freq[lsort] # np.sort(loc)
 
 
-def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True,minorgrid=True,shrink=0.7,cbarfsize=None,forceGrid=False,cbarPad=0.05,minorgridColor=[0.9,0.9,0.9]):
+def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True,minorgrid=True,shrink=0.7,cbarfsize=None,forceGrid=False,cbarPad=0.05,minorgridColor=[0.9,0.9,0.9],extend='neither'):
 # ------------------
 # Convenience function
 # ------------------
@@ -2426,12 +2443,12 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
         else:
             cax.clear()
         if cbarNorth:
-            fig.colorbar(im, cax=cax, orientation='horizontal')   
+            fig.colorbar(im, cax=cax, orientation='horizontal', extend=extend)   
             cax.xaxis.set_label_position('top') 
             cax.xaxis.tick_top()     
             cax.set_xlabel(strings[2], fontsize=fsize, fontweight=fweight)
         else:
-            fig.colorbar(im, cax=cax)
+            fig.colorbar(im, cax=cax, extend=extend)
             cax.set_ylabel(strings[2], fontsize=fsize, fontweight=fweight)
         cax.tick_params(labelsize=cbarfsize)
         if cbarweight=='ticks':
@@ -2817,28 +2834,35 @@ def CalcHistVsT(sig,samprate=1.,subint=512,step=256,t0=0,binMax=1.,Nbins=200):
 
 
 def ApplyCWT(sig,samprate=1.0,sigma=3.14,limFreq=2,alphaExp=0.5):
-    """Calculate continuous wavelet transform (CWT) of time-series
+    """Calculate continuous wavelet transform (CWT) of time-series.
 
-    blam!
+    Here we define 
+
+    .. code-block:: text
+
+        CWT[j,k] = A_sigma k^{alphaExp-0.5} sum_{p=0}^{N-1} X[p] 
+
+                    * exp[ - 2pi^2 (sigma^2 / k^2) (p-k)^2 + 2pi i j p / N  ]  
+
+        with A_sigma = pi^{1/4} sqrt{2N sigma / samprate} and X is the FFT of x[n].
 
     Args:
-        sig (ndarray): Time series to be analyzed.
+        sig (:class:`~numpy.ndarray`): Time series to be analyzed.
         samprate (float): Sampling rate.
         sigma (float): Time-frequency adjustment.
         limFreq (int): Frequency limit division.
         alphaExp (float): Alpha exponent.
 
     Returns:
-        list[Union[:class:`~numpy.ndarray`, int]]: CWT + other stuff
+        list: List containing:
 
-        Things are things
+        ``CWT`` (:class:`~numpy.ndarray`): CWT [size len(sig)/limFreq x len(sig)/2]
 
-        ``CWT`` is float
+        ``acwt`` (:class:`~numpy.ndarray`): power spectrum <|CWT|^2> [size len(sig)/limFreq]
 
-    Output list includes
+        ``freq_vec`` (:class:`~numpy.ndarray`): frequency vector [size len(sig)/limFreq]
 
-    .. _PEP 484:
-        https://www.python.org/dev/peps/pep-0484/
+        ``time_vec`` (:class:`~numpy.ndarray`): time vector [size len(sig)/2]
 
     """
     Nsig,N = sig.shape
@@ -3448,3 +3472,4 @@ def DrawSimplex(flim):
     plt.plot([flim/2,0],     [flim/2,0],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
     plt.plot([flim/2,flim],  [flim/2,0],     [0,0],     color=[0.5,0.5,0.5], lw=2.5)
     plt.plot([0,flim],       [0,0],          [0,0],     color=[0.5,0.5,0.5], lw=2.5)
+
