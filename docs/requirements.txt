@@ -2,10 +2,11 @@
 sphinx
 sphinx_rtd_theme
 sphinx-notfound-page
+sphinx-copybutton
 nbsphinx
 
 numpy
-matplotlib
+matplotlib 
 scipy
 
 # Precise versioning (Recommended for stability)

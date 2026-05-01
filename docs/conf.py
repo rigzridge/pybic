@@ -28,6 +28,7 @@ extensions = [
     'sphinx.ext.todo',
     'nbsphinx',
     'sphinx.ext.linkcode',
+    'sphinx_copybutton',
     # 'matplotlib.sphinxext.plot_directive',
 ]
 source_suffix = ['.rst', '.md']
@@ -44,8 +45,12 @@ def linkcode_resolve(domain, info):
         # Try to get source code of function or method
         source, lineno = inspect.getsourcelines(eval('%s.%s' % (module, fxn)))
     except:
-        # Attributes throw errors, just link to BicAn
+        # Attributes throw errors so first link to BicAn
         source, lineno = inspect.getsourcelines(pybic.BicAn)
+        # Try to get attributes
+        # for i, line in enumerate(source):
+        #     if f'{fxn}' in line:
+                
     lineno = '#L%d' % lineno
 
     return '%s/%s.py%s' % (github_repo, module, lineno)
