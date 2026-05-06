@@ -16,6 +16,10 @@ import pybic as bic
 b = bic.BicAn(x,samprate=fS)
 ```
 
+## Documentation
+
+Check out our (in-development) [Read the Docs page](https://pybic.readthedocs.io/en/latest/) for detailed information about the ``pybic`` module and the associated ``pybic.BicAn`` class.
+
 ## Tutorials
 
 For convenience, the following Jupyter notebooks demonstrate many of the features of PyBic:
