@@ -78,6 +78,9 @@ todo_include_todos = True
 # Show __init__ and __setattr_
 napoleon_include_special_with_doc = True
 
+# Skip copying console shizz
+copybutton_exclude = '.linenos, .gp'
+
 # Add any paths that contain templates here, relative to this directory.
 # Not really using this yet...
 templates_path = ['_templates']
