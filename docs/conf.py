@@ -29,6 +29,7 @@ extensions = [
     'nbsphinx',
     'sphinx.ext.linkcode',
     'sphinx_copybutton',
+    'sphinx_tabs.tabs',
     # 'matplotlib.sphinxext.plot_directive',
 ]
 source_suffix = ['.rst', '.md']
@@ -73,6 +74,9 @@ autosummary_generate = True
 
 # Include TODO sections
 todo_include_todos = True
+
+# Show __init__ and __setattr_
+napoleon_include_special_with_doc = True
 
 # Add any paths that contain templates here, relative to this directory.
 # Not really using this yet...

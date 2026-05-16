@@ -3,6 +3,7 @@ sphinx
 sphinx_rtd_theme
 sphinx-notfound-page
 sphinx-copybutton
+sphinx-tabs
 nbsphinx
 
 numpy

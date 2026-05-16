@@ -8,6 +8,14 @@ The central class:
 
    pybic.BicAn
 
+Signal generation
+
+.. autosummary::
+   :toctree: generated
+
+   pybic.SignalGen
+   pybic.TestSignal
+
 Time-frequency representations
 
 .. autosummary::
