@@ -39,7 +39,7 @@ For more information and references on the history, theory, utility,
 and implementation of polyspectra, please see our publication in 
 *Computer Physics Communications*, `RiggsKoepkeMatheny2026`_.
 
-Please see our `GitHub repo`_ and `Read the Docs`_ pages!
+Also check out our `GitHub repo`_ and `Read the Docs`_ pages!
 
 To run the demo from the shell, use
 
@@ -75,6 +75,19 @@ Todo:
     * Bispectrogram (none)
     * Auto-filters! (none)
     * Video output (none)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 .. _RiggsKoepkeMatheny2026:
     https://doi.org/10.1016/j.cpc.2026.110097
@@ -402,7 +415,6 @@ from scipy.ndimage import uniform_filter1d
 # Computer modern font (LaTeX default)
 plt.rcParams['mathtext.fontset'] = 'cm'
 
-
 class BicAn:
     """Main class of :mod:`pybic` module, i.e., *Bicoherence Analyzer*.
 
@@ -640,8 +652,8 @@ class BicAn:
 
     # Class methods
     def __init__(self,inData,**kwargs):
-        """Constructor of :class:`pybic.BicAn`
-        See :class:`~pybic.BicAn` docstring above for more info
+        """Constructor of :class:`pybic.BicAn`.
+        See :class:`~pybic.BicAn` docstring above for more info.
         """
         self.ParseInput(inData,kwargs)
 
@@ -650,9 +662,8 @@ class BicAn:
         return
 
     def __setattr__(self, attr, val):
-    # ------------------
-    # Internal method to set attributes
-    # ------------------
+        """Set attribute method of :class:`pybic.BicAn`.
+        """
         if not attr in dir(BicAn):
             print('***WARNING*** :: BicAn class has no attribute {}!'.format(attr))
             # Check case issue
@@ -700,7 +711,7 @@ class BicAn:
     @property
     def FreqRes(self):  
         """float: Frequency resolution in Hz.
-        Note that """
+        Note that ``FreqRes = SubInt`` if ``SpecType=='cwt'``"""
         return self.SampRate / self.SubInt if self.SpecType=='stft' else self.SampRate / self.Samples
 
     @property
@@ -796,7 +807,7 @@ class BicAn:
 
                     # Check if first dimension is strictly increasing
                     if np.sum(np.sign(np.diff(inData[:,0]))) == N-1:
-                        print('Time input automatically detected!') 
+                        print('Time input detected!') 
                         self.Raw   = np.zeros((N,min(sz)-1))
                         self.TZero = inData[0,0]
                         self.Raw   = inData[:,1:]
@@ -2575,28 +2586,61 @@ def PlotRHS(x,y,ax,r_col='gray',ylab='',ylim=[],fsize=20,alph=1.0,lw=2):
     return ax_r
 
 
-def SignalGen(fS=1,tend=100,Ax=1,fx=1,Afx=0,Ay=0,fy=0,Afy=0,Az=0,Ff=0,noisy=2):
+def PlotTop(x,y,ax,col='C0',xlab='',xlim=[],fsize=20,alph=1.0,lw=2):
 # ------------------
-# Provides 3-osc FM test signal
+# Simplifies twin-axis stuff
 # ------------------
-# [sig,t] = SignalGen(fS,tend,Ax,fx,Afx,Ay,fy,Afy,Az,Ff,noisy)
-# . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 
-# INPUTS:
-# fS    --> Sampling frequency in Hz
-# tend  --> End time [t = 0:1/fS:tend]
-# Ax    --> Amplitude of oscillation #1
-# fx    --> Frequency "       "      #1
-# Afx   --> Amplitude of frequency sweep
-# Ay    --> Amplitude of oscillation #2
-# fy    --> Frequency "       "      #2
-# Afy   --> Amplitude of frequency sweep
-# Az    --> Amplitude of oscillation #3
-# Ff    --> Frequency of frequency mod.
-# noisy --> Noise floor
-# OUTPUTS:
-# sig   --> Signal 
-# t     --> Time vector
-# . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .        
+    ax_t = ax.twinx()
+
+    ax_t.plot(x, y, color=col, alpha=alph, lw=lw,)
+
+    labels = []
+    labels += ax_t.get_xticklabels()
+    for label in labels:
+        label.set_fontweight('bold')
+        label.set_color(col)
+    if len(ylim)!=0:
+        ax_t.set_xlim(xlim[0],xlim[1])
+    ax_t.set_xlabel(xlab,fontsize=fsize)
+    ax_t.tick_params(labelsize=9*fsize/10)
+    ax_t.minorticks_on()
+    return ax_t
+
+
+def SignalGen(fS=1.0,tend=100,Ax=1,fx=1,Afx=0,Ay=0,fy=0,Afy=0,Az=0,Ff=0,noisy=2):
+    """3-oscillator FM signal generator.
+
+    Output is defined as sum of three frequency-modulated tones + white noise 
+
+    .. code-block:: text
+
+        sig = Ax*x(t) + Ay*y(t) + Az*z(t) + noisy*noise.
+
+    Note:
+        The instantaneous frequency of the third oscillation is tied to the first two!
+        That is, ``fz = fx + fy`` and ``dfz = dfx + dfy``.
+
+    Args:
+        fS   (float): Sampling frequency in Hz.
+        tend (float): End time, via ``t = 0:1/fS:tend``.
+        Ax   (float): Amplitude of oscillation #1
+        fx   (float): Frequency of oscillation #1 in Hz
+        Afx  (float): Amplitude of frequency sweep
+        Ay   (float): Amplitude of oscillation #2.
+        fy   (float): Frequency of oscillation #2 in Hz.
+        Afy  (float): Amplitude of frequency sweep in Hz/s.
+        Az   (float): Amplitude of oscillation #3.
+        Ff   (float): Frequency of frequency mod.
+        noisy (float): Noise amplitude.
+
+    Returns:
+        list: ``sig,t,fS = SignalGen(...)``
+
+        * sig (:class:`~numpy.ndarray`) - Test signal.
+        * t (:class:`~numpy.ndarray`) - Time vector.
+        * fS (:obj:`float`) - Sampling rate.
+
+    """       
     t = np.arange(0,tend,1/fS)  # Time-vector sampled at "fS" Hz
 
     # Make 3 sinusoidal signals...
@@ -2616,14 +2660,69 @@ def SignalGen(fS=1,tend=100,Ax=1,fx=1,Afx=0,Ay=0,fy=0,Afy=0,Az=0,Ff=0,noisy=2):
 
 
 def TestSignal(whatsig,tend=100,noisy=2,fS=200,f1=19,f2=45):
-# ------------------
-# Provides FM test signal
-# ------------------
-    # fS   = 200
-    # tend = 100
-    # noisy = 2
-    # f1 = 19
-    # f2 = 45
+    """Provides various signals for bispectral analysis.
+
+    Essentially a suite of test functions for PyBic!
+
+    Mostly a wrapper for :func:`~pybic.SignalGen`
+
+    For more discussion see `RiggsKoepkeMatheny2026`_.
+
+    Args:
+        whatsig (str): Input string (see below).
+        tend    (float): End time, via ``t = 0:1/fS:tend``.
+        noisy   (float): Noise amplitude.
+        fS      (float): Sampling frequency in Hz.
+        f1      (float): Frequency of oscillation #1 in Hz.
+        f2      (float): Frequency of oscillation #2 in Hz.
+
+    Returns:
+        list: ``inData,t,fS = TestSignal(...)``
+
+        * inData (:class:`~numpy.ndarray`) - Test signal.
+        * t (:class:`~numpy.ndarray`) - Time vector.
+        * fS (:obj:`float`) - Sampling rate.
+
+    The following input strings are supported
+
+    ``'demo'``
+    ``'classic'``
+    ``'tone'``
+    ``'noisy'``
+    ``'2tone'``
+    ``'3tone'``
+    ``'4tone'``
+    ``'line'``
+    ``'circle'``
+    ``'fast_circle'``
+    ``'quad_couple'``
+    ``'d3dtest'``
+    ``'cube_couple'``
+    ``'coherence'``
+    ``'cross_2tone'``
+    ``'cross_3tone'``
+    ``'cross_circle'``
+    ``'amtest'``
+    ``'quad_couple_circle'``
+    ``'quad_couple_circle2'``
+    ``'inst_freq_test'``
+    ``'linear_phase'``
+    ``'phase_mod'``
+    ``'linear_phase_am'``
+    ``'phase_mod_am'``
+    ``'3tone_short'``
+    ``'circle_oversample'``
+    ``'cross_3tone_short'``
+    ``'helix'``
+
+    Example:
+        >>> x,t,fS = TestSignal('quad_couple')
+        >>> b = bic.BicAn(x,samprate=fS)
+
+    .. _RiggsKoepkeMatheny2026:
+        https://github.com/rigzridge/pybic/blob/main/BicAn_An%20integrated%2C%20open-source%20framework%20for%20polyspectral%20analysis_PREPRINT.pdf
+
+    """ 
     dum = whatsig.lower()
     if dum == 'classic':
         inData,t,_ = SignalGen(fS,tend,fx=f2,Afx=6,Ay=1,fy=f1,Afy=10,Az=1,Ff=1/20)
@@ -2914,15 +3013,12 @@ def ApplyCWT(sig,samprate=1.0,sigma=3.14,limFreq=2,alphaExp=0.5):
         alphaExp (float): Alpha exponent.
 
     Returns:
-        list: List containing:
+        list: ``CWT,acwt,freq_vec,time_vec = ApplyCWT(...)``
 
-        ``CWT`` (:class:`~numpy.ndarray`): CWT [size len(sig)/limFreq x len(sig)/2]
-
-        ``acwt`` (:class:`~numpy.ndarray`): power spectrum <|CWT|^2> [size len(sig)/limFreq]
-
-        ``freq_vec`` (:class:`~numpy.ndarray`): frequency vector [size len(sig)/limFreq]
-
-        ``time_vec`` (:class:`~numpy.ndarray`): time vector [size len(sig)/2]
+        * CWT (:class:`~numpy.ndarray`) - CWT [size len(sig)/limFreq x len(sig)/2]
+        * acwt (:class:`~numpy.ndarray`) - power spectrum <|CWT|^2> [size len(sig)/limFreq]
+        * freq_vec (:class:`~numpy.ndarray`) - frequency vector [size len(sig)/limFreq]
+        * time_vec (:class:`~numpy.ndarray`) - time vector [size len(sig)/2]
 
     """
     Nsig,N = sig.shape
