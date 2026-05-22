@@ -1,0 +1,24 @@
+/*Custom style!*/
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600&display=swap');
+
+/* Apply Montserrat to the entire body and headings */
+body, h1, h2, h3, h4, h5, h6 {
+    font-family: 'Montserrat', sans-serif !important;
+}
+
+/* Use unicode shizz for icons */
+.admonition.note .admonition-title::before {
+    content: "\1F4DD\00A0"; 
+}
+
+/* Use unicode shizz for icons */
+.admonition.hint .admonition-title::before {
+    content: "\1F4A1"; 
+}
+
+/* Use unicode shizz for icons */
+.admonition.todo .admonition-title::before {
+    content: "\1F91E"; 
+}
+
