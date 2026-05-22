@@ -55,9 +55,11 @@ or, alternatively, in Python
     b = bic.RunDemo()
 
 Additionally, we've developed Jupyter notebooks with a `guided tour`_
-of ``PyBic`` and a `demonstration`_ of the :func:`~pybic.Plot` function.
+of PyBic and a `demonstration`_ of the :func:`~pybic.Plot` function.
 
-Todo:
+.. todo::
+    :collapsible: closed
+
     * Add minimum threshold keyword to PlotBispec() method to mask b^2 below noise floor (none)
     * Add colormap picker in PlotGUI() with SHIFT + c, say (none)
     * Swap out matplotlib widgets for full tkinter GUI =^x (some)
@@ -75,6 +77,7 @@ Todo:
     * Bispectrogram (none)
     * Auto-filters! (none)
     * Video output (none)
+    * Base units (none)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -87,7 +90,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+along with this program.  If not, see http://www.gnu.org/licenses/.
 
 .. _RiggsKoepkeMatheny2026:
     https://doi.org/10.1016/j.cpc.2026.110097
@@ -107,7 +110,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-# Version History 
+# Version History
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 5/22/2026 -> Removed LoadBarOLD() and added more docstrings 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 5/1/2026 -> Fixed plot labels in various Plot...() methods to better reflect 
 # normalized analysis, ie, f given in units of fs; LoadBar output cleaned up;
@@ -543,7 +548,7 @@ class BicAn:
     Limit set automatically for ``DistLevel = 0.0``."""
 
     PlotIt    = True
-    """bool: Run :func:`~pybic.BicAn.PlotGUI` after analysis is complete."""
+    """bool: Run :func:`BicAn.PlotGUI` after analysis is complete."""
     CMap      = 'viridis'
     """str: Colormap for plots. 
     Accepts both custom and `standard matplotlib` colormaps. 
@@ -568,11 +573,12 @@ class BicAn:
     PlotDPI   = 150
     """int: Dots per inch of plots."""
     SpecVLim  = []
-    """list of float: Colorbar min/max limits as ``[vmin,vmax]``."""
+    """list of float: Spectrogram colorbar limits as ``[vmin,vmax]``.
+    Only applies when using :func:`BicAn.PlotGUI`!"""
     NormBic   = False
     """bool: Normalize bicoherence spectrum when using :func:`BicAn.PlotBispec`."""
     PlotSlice = None
-    """int: Selected slice of TFR to plot when using :func:`BicAn.PlotSpectro`.
+    """int: Selected slice of TFR to plot when using :func:`BicAn.PlotPowerSpec` and :func:`BicAn.PlotMeanHist`.
     Also affects output of :func:`BicAn.PlotPowerSpec` and :func:`BicAn.PlotBispec`."""
     PlotSig   = 0
     """int: Selected time series to plot when using :func:`BicAn.PlotSpectro`."""
@@ -596,7 +602,7 @@ class BicAn:
     """float: Initial time."""
 
     Figure    = 0
-    """float: Used for :func:`BicAn.PlotGUI()` functionality."""
+    """:obj:`~matplotlib.figure.Figure`: Used for :func:`BicAn.PlotGUI()` functionality."""
     AxHands   = [0,0,0]
     CaxHands  = [None,None]
     NewGUICax = False
@@ -862,9 +868,16 @@ class BicAn:
 
 
     def ApplyZPad(self):
-    # ------------------
-    # Zero-padding
-    # ------------------
+        """Apply zero padding to :attr:`Raw` data.
+
+        Truncates data when :attr:`ZPad` is ``False``.
+
+        .. caution::
+
+            This should only be applied if using the STFT, i.e.,
+            when :attr:`SpecType` corresponds to ``stft``!
+
+        """
         if self.ZPad:
             tail_error = self.Samples % self.SubInt
             if tail_error != 0:
@@ -881,9 +894,8 @@ class BicAn:
 
 
     def ProcessData(self):
-    # ------------------
-    # Main processing loop
-    # ------------------
+        """Main processing loop.
+        """
         start = time.time()
  
         dum = self.SpecType.lower()
@@ -914,9 +926,8 @@ class BicAn:
 
     ## Analysis
     def SpectroSTFT(self):
-    # ------------------
-    # STFT method
-    # ------------------ 
+        """Class wrapper for :func:`ApplySTFT`.
+        """
         if self.NFreq>self._WarnSize and self.SizeWarn:
             self.SizeWarnPrompt(self.NFreq)
 
@@ -934,23 +945,15 @@ class BicAn:
 
 
     def SpectroWavelet(self):
-        """Example of docstring on the __init__ method.
+        """Class method for CWT analysis.
 
-        The __init__ method may be documented in either the class level
-        docstring, or as a docstring on the __init__ method itself.
+        .. note::
 
-        Either form is acceptable, but the two should not be mixed. Choose one
-        convention to document the __init__ method and be consistent with it.
+            This method *mostly* wraps :func:`ApplyCWT`, in addition to
 
-        Note:
-            Do not include the `self` parameter in the ``Args`` section.
-            :attr:`CMap`
-
-        Args:
-            param1 (str): Description of `param1`.
-            param2 (:obj:`int`, optional): Description of `param2`. Multiple
-                lines are supported.
-            param3 (:obj:`list` of :obj:`str`): Description of `param3`.
+            * Checking the default value of :attr:`Sigma`,
+            * Use of :func:`ApplyDetrend` if :attr:`Detrend` is ``True``,
+            * Subtraction of time-series' mean.
 
         """
         if self.Sigma == 0: # Check auto
@@ -994,10 +997,11 @@ class BicAn:
 
 
     def HistogramSig(self,Nbins=200):
-    # ------------------
-    # STFT method
-    # ------------------ 
+        """Class wrapper for :func:`CalcHistVsT`.
 
+        Args:
+            Nbins (int): Number of histogram bins.
+        """
         binMax = np.max(abs(self.Processed))
         hist,mh,binvec,time_vec = CalcHistVsT(self.Processed,self.SampRate,self.SubInt,self.Step,self.TZero,binMax=binMax,Nbins=Nbins)
         
@@ -1010,9 +1014,8 @@ class BicAn:
 
 
     def Coherence(self):
-    # ------------------
-    # Cross-spectrum/coh
-    # ------------------
+        """Class wrapper for :func:`SpecToCoherence`.
+        """
         if self._Nseries!=2:
             print('***WARNING*** :: Cross-coherence requires exactly 2 signals!')
         else:
@@ -1024,9 +1027,26 @@ class BicAn:
 
 
     def Bicoherence(self):
-    # ------------------
-    # Calculate bicoherence
-    # ------------------       
+        """Class wrapper for bispectral analysis.
+
+        .. note::
+
+            For a single time-series :math:`x[t]`, this method wraps :func:`SpecToBispec`,
+            producing the **auto**-bispectrum/-bicoherence spectrum,
+            :math:`\mathcal{B}_{xxx}`/:math:`b^2_{xxx}`.
+
+            :func:`SpecToCrossBispec` is wrapped for 2 or 3 time-series,
+            yielding the **cross**-bispectrum/-bicoherence spectrum,
+            :math:`\mathcal{B}_{xyy}`/:math:`b^2_{xyy}` or
+            :math:`\mathcal{B}_{xyz}`/:math:`b^2_{xyz}`.
+
+        .. caution::
+
+            This method omits the first and last 10% of the spectrogram :attr:`sg`
+            when using the CWT (:attr:`SpecType` = ``cwt``) to reduce edge effects!
+            This can be avoided by setting :attr:`CalcCOI` to ``True``.
+
+        """    
         dum = self.sg 
         if self.SpecType == 'wave' and not self.CalcCOI:
             WTrim = len(self.tv) // 10
@@ -1048,9 +1068,19 @@ class BicAn:
 
 
     def Tricoherence(self):
-    # ------------------
-    # Calculate tricoherence
-    # ------------------       
+        """Class wrapper for trispectral analysis.
+
+        .. note::
+
+            Only the **auto**-trispectrum/-tricoherence spectrum is presently supported!
+
+        .. caution::
+
+            This method omits the first and last 10% of the spectrogram :attr:`sg`
+            when using the CWT (:attr:`SpecType` = ``cwt``) to reduce edge effects!
+            This can be avoided by setting :attr:`CalcCOI` to ``True``.
+
+        """       
         dum = self.sg 
         if self.SpecType == 'wave' and not self.CalcCOI:
             WTrim = len(self.tv) // 10
@@ -1067,9 +1097,14 @@ class BicAn:
 
 
     def CalcMean(self,Ntrials=10):
-    # ------------------
-    # Calculate mean of b^2
-    # ------------------
+        """Calculate mean of bicoherence spectrum across the full bi-frequency space.
+
+        Uses absolute value of spectrogram :attr:`sg` and randomized phases.
+
+        Args:
+            Ntrials (int): Number of randomized trials.
+
+        """ 
         n,m,r = self.sg.shape
 
         A = abs(self.sg)
@@ -1097,10 +1132,19 @@ class BicAn:
         return  
 
 
-    def MonteCarloMax(self,N=2,Nrolls=1000,critCoh=1,plot=False,verbose=False):
-    # ------------------
-    # Toss some dice and try to find maxima!
-    # ------------------ 
+    def MonteCarloMax(self,N=2,Nrolls=1000,critCoh=1.0,plot=False,verbose=False):
+        """Identifies maxima in N-coherence spectra using random restart hillclimb.
+
+        Uses absolute value of spectrogram :attr:`sg` and randomized phases.
+
+        Args:
+            N (int): Polyspectral order.
+            Nrolls (int): Number of randomized trials.
+            critCoh (float): Critical level of ``N``-coherence.
+            plot (bool): Plot data (``N`` must be ``2`` or ``3``).
+            verbose (bool): Show tested frequencies.
+
+        """  
         start = time.time()
 
         bestCoh = 0
@@ -1178,18 +1222,17 @@ class BicAn:
 
     ## Plot methods
     def PlotPowerSpec(self,*args,vLim=[]):
-        """Plots power spectrum
-
-        `PEP 484`_ type annotations are supported. If attribute, parameter, and
-        return types are annotated according to `PEP 484`_, they do not need to be
-        included in the docstring:
+        """Plots time average (or slice) of spectrogram.
 
         Args:
-            *args (int): The first parameter.
-            vLim (list)
+            *args (list): Input :obj:`~matplotlib.figure.Figure` and :obj:`~matplotlib.axes.Axes` as ``[fig,ax]``.
+                Default behavior creates new figure and axes with :func:`~matplotlib.pyplot.subplots`.
+            vLim  (list): Logarithmic y-limits of plot ``[vmin,vmax]``, defaults to data range.
 
-        .. _PEP 484:
-            https://www.python.org/dev/peps/pep-0484/
+        .. note::
+
+            The :attr:`PlotSlice` attribute allows plotting a slice of spectrogram ``sg[:,PlotSlice,:]``.
+            Defaults to time average when ``None``.
 
         """
         if len(args)==0:
@@ -1217,9 +1260,19 @@ class BicAn:
         return
 
     def PlotMeanHist(self,*args,vLim=[]):
-    # ------------------
-    # Plot mean histogram
-    # ------------------
+        """Plots time average (or slice) of data histogram.
+
+        Args:
+            *args (list): Input :obj:`~matplotlib.figure.Figure` and :obj:`~matplotlib.axes.Axes` as ``[fig,ax]``.
+                Default behavior creates new figure and axes with :func:`~matplotlib.pyplot.subplots`.
+            vLim  (list): Logarithmic y-limits of plot ``[vmin,vmax]``, defaults to data range.
+
+        .. note::
+
+            The :attr:`PlotSlice` attribute allows plotting a slice of histogram ``hg[:,PlotSlice,:]``.
+            Defaults to time average when ``None``.
+
+        """
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
         else:
@@ -1246,9 +1299,15 @@ class BicAn:
 
 
     def PlotCoherence(self,*args,crossSpec=False,vLim=[]):
-    # ------------------
-    # Plot cross-coh, etc.
-    # ------------------
+        """Plots cross-coherence spectrum :attr:`cc` or cross-spectrum :attr:`cs`.
+
+        Args:
+            *args (list): Input :obj:`~matplotlib.figure.Figure` and :obj:`~matplotlib.axes.Axes` as ``[fig,ax]``.
+                Default behavior creates new figure and axes with :func:`~matplotlib.pyplot.subplots`.
+            crossSpec (bool): Plots absolute value of cross-spectrum if ``True``.
+            vLim  (list): Logarithmic y-limits of plot ``[vmin,vmax]``, defaults to data range.
+
+        """
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
         else:
@@ -1276,10 +1335,17 @@ class BicAn:
         return
 
 
-    def PlotSpectro(self,*args,vLim=[],maxLine=-1):
-    # ------------------
-    # Plot spectrograms
-    # ------------------
+    def PlotSpectro(self,*args,vLim=[],maxLine=-1.):
+        """Plots absolute value of spectrogram.
+
+        Args:
+            *args (list): Input :obj:`~matplotlib.figure.Figure` and :obj:`~matplotlib.axes.Axes` as ``[fig,ax]``.
+                Default behavior creates new figure and axes with :func:`~matplotlib.pyplot.subplots`.
+            vLim  (list): Logarithmic y-limits of plot ``[vmin,vmax]``, defaults to data range.
+            maxLine (float): Overplots peak of spectrogram vs time if ``maxLine>=0``.
+                Nonnegative input also populates the :attr:`InstFreq` attribute!
+
+        """
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
             cax = None
@@ -1325,9 +1391,14 @@ class BicAn:
 
 
     def PlotHisto(self,*args,vLim=[]):
-    # ------------------
-    # Plot histograms
-    # ------------------
+        """Plots data histogram vs time.
+
+        Args:
+            *args (list): Input :obj:`~matplotlib.figure.Figure` and :obj:`~matplotlib.axes.Axes` as ``[fig,ax]``.
+                Default behavior creates new figure and axes with :func:`~matplotlib.pyplot.subplots`.
+            vLim  (list): Logarithmic y-limits of plot ``[vmin,vmax]``, defaults to data range.
+
+        """
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
             cax = None
@@ -1358,9 +1429,20 @@ class BicAn:
 
 
     def PlotBispec(self,*args,normb2=False,plot3d=False,squeezeAxes=True):
-    # ------------------
-    # Plot bispectrum
-    # ------------------
+        """Plots bispectrum or bicoherence spectrum.
+
+        Args:
+            *args (list): Input :obj:`~matplotlib.figure.Figure` and :obj:`~matplotlib.axes.Axes` as ``[fig,ax]``.
+                Default behavior creates new figure and axes with :func:`~matplotlib.pyplot.subplots`.
+            normb2 (bool): Normalize colorbar limits to ``[0,1]``.
+            plot3d (bool): 
+            squeezeAxis (bool): 
+
+        .. note::
+
+            !
+
+        """
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
 
@@ -3398,38 +3480,28 @@ def ApplyDetrend(y):
 
 
 def ScaleToString(scale):
-    """Example function with types documented in the docstring.
-
-    `PEP 484`_ type annotations are supported. If attribute, parameter, and
-    return types are annotated according to `PEP 484`_, they do not need to be
-    included in the docstring:
+    """Converts order of magnitude to `metric prefix`_.
 
     Args:
-        scale (int): The first parameter.
+        scale (int): Order of magnitude. Support for :math:`\in [-15,15]`.
 
     Returns:
-        str: The return value. True for success, False otherwise.
+        str: Metric prefix.
 
-    .. _PEP 484:
-        https://www.python.org/dev/peps/pep-0484/
+    Example:
+        >>> ScaleToString(3)
+        'k'
+        >>> ScaleToString(-3)
+        'm'
+
+    .. _metric prefix:
+        https://en.wikipedia.org/wiki/Metric_prefix
 
     """
     tags = ['f',[],[],'p',[],[],'n',[],[],r'$\mu$',[],[],'m','c','d','', [],'h','k',[],[],'M',[],[],'G',[],[],'T',[],[],'P',[],[],'E']
     s = tags[15+scale]
     return s   
 
-
-def LoadBarOLD(m,M):
-# ------------------
-# Help the user out!
-# ------------------
-    ch1 = r'||\-/|||'
-    ch2 = r'_.:"^":.'
-    buf = '\r%3.0f%%%s%s' % (100*(m+1)/M, ch1[m%8], ch2[m%8])
-    # Changed m/(M-1) to (m+1)/M to avoid /0 errors 
-    # print(buf)
-    sys.stdout.write(buf)
-    return
 
 def LoadBar(m, M, bar_length=40):
     ch1 = r'||\-/|||'
