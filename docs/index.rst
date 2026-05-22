@@ -12,30 +12,11 @@ PyBic documentation!
    This hint is collapsible, but initially open.
    :ref:`This links back to the top! <home>`
 
-Getting started
-----------------
-
-.. tabs::
-
-   .. code-tab:: bash
-
-         python3 pybic.py
-
-   .. code-tab:: py
-
-         import pybic as bic
-         b = bic.RunDemo()
-
 .. note::
 
    While the :mod:`pybic` module is relatively complete,
    this documentation is under active development!
    Updates should be coming throughout 2026...
-
-.. todo:: 
-
-   Include base units for time-series
-
 
 .. toctree::
    :caption: Sections
@@ -43,9 +24,12 @@ Getting started
 
    Home <self>
    theory
-   plotting
+   start
+   examples
    api
 
+Module docs
+-----------
 
 .. autosummary::
    :toctree: generated
