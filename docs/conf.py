@@ -96,8 +96,9 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # 'sphinx_rtd_theme' is the standard theme for Read the Docs.
 # Will not work w/o this!
 html_theme = 'sphinx_rtd_theme'
+# html_theme = 'traditional'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. 
-# Not used yet!
 html_static_path = ['_static']
+html_css_files = ['custom_stuff.css']

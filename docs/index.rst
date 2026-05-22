@@ -1,5 +1,16 @@
+.. _home:
+
+====================
 PyBic documentation!
-=======================================
+====================
+
+.. include:: ../README.rst
+
+.. hint::
+   :collapsible:
+
+   This hint is collapsible, but initially open.
+   :ref:`This links back to the top! <home>`
 
 Getting started
 ----------------
@@ -15,11 +26,6 @@ Getting started
          import pybic as bic
          b = bic.RunDemo()
 
-Plotting
-----------------
-
-To plot some stuff, you can use the :func:`pybic.Plot` function:
-
 .. note::
 
    While the :mod:`pybic` module is relatively complete,
@@ -32,12 +38,17 @@ To plot some stuff, you can use the :func:`pybic.Plot` function:
 
 
 .. toctree::
+   :caption: Sections
    :hidden:
 
    Home <self>
+   theory
+   plotting
    api
+
 
 .. autosummary::
    :toctree: generated
+   :caption: Module
 
    pybic
