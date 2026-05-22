@@ -26,7 +26,7 @@ PyBic documentation!
    theory
    start
    examples
-   api
+   GitHub <https://github.com/rigzridge/pybic>
 
 Module docs
 -----------
@@ -36,3 +36,8 @@ Module docs
    :caption: Module
 
    pybic
+
+.. toctree::
+   :hidden:
+
+   api
