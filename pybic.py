@@ -112,6 +112,8 @@ along with this program.  If not, see http://www.gnu.org/licenses/.
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 5/27/2026 -> Fixed "plot3d = True" option in PlotBispec()
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 5/22/2026 -> Removed LoadBarOLD() and added more docstrings 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 5/1/2026 -> Fixed plot labels in various Plot...() methods to better reflect 
@@ -1435,22 +1437,23 @@ class BicAn:
             *args (list): Input :obj:`~matplotlib.figure.Figure` and :obj:`~matplotlib.axes.Axes` as ``[fig,ax]``.
                 Default behavior creates new figure and axes with :func:`~matplotlib.pyplot.subplots`.
             normb2 (bool): Normalize colorbar limits to ``[0,1]``.
-            plot3d (bool): 
-            squeezeAxis (bool): 
+            plot3d (bool): Plot in 3D with :func:`~mpl_toolkits.mplot3d.axes3d.Axes3D.plot_surface`
+                (default behavior uses :func:`~matplotlib.pyplot.pcolormesh`). 
+            squeezeAxes (bool): Shrink y-axis to eliminate white space in plot.
 
         .. note::
 
-            !
+            The output of ``PlotBispec()`` depends on the :attr:`PlotType` attribute!
+            For example, ``PlotType = 'bicoh'`` provides the bicoherence spectrum,
+            while ``PlotType = 'angle'`` plots the biphase spectrum.
 
         """
         if len(args)==0:
-            fig, ax = plt.subplots(dpi=self.PlotDPI)
 
             if plot3d:
-                ###
-                #ax = fig.add_subplot(111, projection='3d')
-                #ax = plt.figure().add_subplot(projection='3d')
-                fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
+                fig, ax = plt.subplots(subplot_kw={'projection': '3d'},dpi=self.PlotDPI)
+            else:
+                fig, ax = plt.subplots(dpi=self.PlotDPI)
 
             cax = None
         else:
@@ -1477,25 +1480,23 @@ class BicAn:
         if self._Nseries==1:
             f = self.fv/10**self.FScale
             if plot3d:
-                print('hey!')
                 # EXPERIMENTAL 3D OPTION!!!
                 X,Y = np.meshgrid(f, f[0:len(f)//2] )
-                im = ax.plot_surface(X, Y, dum, cmap=self.CMap, lw=1, antialiased=True, rstride=10, cstride=10)
-                return
+                im = ax.plot_surface(X, Y, dum, cmap=self.CMap, lw=0, antialiased=False)
             else:
                 if normb2:
                     im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto', vmin=0, vmax=1)
                 else:
                     im = ax.pcolormesh(f,f[0:len(f)//2],dum, cmap=self.CMap, shading='auto')
 
+                # Draw triangle
+                ax.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.5,0.5,0.5], linewidth=2.5)
+                ax.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.5,0.5,0.5], linewidth=2.5)
+
             if squeezeAxes:
                 ax.set_ylim(f[0], f[-1]/2)
             else:
                 ax.set_ylim(f[0], f[-1])
-
-            # Draw triangle
-            ax.plot([0, f[-1]/2],[0, f[-1]/2],     color=[0.5,0.5,0.5], linewidth=2.5)
-            ax.plot([f[-1]/2, f[-1]],[f[-1]/2, 0], color=[0.5,0.5,0.5], linewidth=2.5)
 
         else:
             f = self.ff/10**self.FScale
@@ -1507,7 +1508,8 @@ class BicAn:
         
         fstr1 = r'$f_1/f_s$' if self._NormToNyq else r'$f_1\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         fstr2 = r'$f_2/f_s$' if self._NormToNyq else r'$f_2\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
-        cax = PlotLabels(fig,ax,[fstr1,fstr2,cbarstr],self.FontSize,self.CbarNorth,im,cax)
+        strings = [fstr1,fstr2,cbarstr,''] if plot3d else [fstr1,fstr2,cbarstr] 
+        cax = PlotLabels(fig,ax,strings,self.FontSize,self.CbarNorth,im,cax)
         if self.NewGUICax:
             self.CaxHands[0] = cax
         ax.set_xlim(f[0], f[-1])
@@ -1519,9 +1521,24 @@ class BicAn:
 
 
     def PlotTrispec(self,Tval=0.5,colorTricoh=True,elev=26,azim=-56,roll=0,shrink=0.7,squeezeAxes=True):
-    # ------------------
-    # Plot trispectrum
-    # ------------------
+        """Plots trispectrum or tricoherence spectrum.
+
+        Args:
+            Tval (float): Critical value of tricoherence (omits all data below).
+            colorTricoh (bool): Color data with tricoherence (``True``) or triphase (``False``).
+            elev (float): Viewpoint angle above xy axes.
+            azim (float): Viewpoint azimuth around z axis.
+            roll (float): Viewpoint roll angle.
+            shrink (float): Shrink factor of colorbar.
+            squeezeAxes (bool): Shrink y/z-axes to eliminate white space in plot.
+
+        .. note::
+
+            The output of ``PlotBispec()`` depends on the :attr:`PlotType` attribute!
+            For example, ``PlotType = 'bicoh'`` provides the bicoherence spectrum,
+            while, ``PlotType = 'angle'`` plots the biphase spectrum.
+
+        """
 
         f = self.fv / 10**self.FScale
         lim = len(f)
@@ -1607,9 +1624,22 @@ class BicAn:
 
 
     def WhichPlot(self,local=None):
-    # ------------------
-    # Helper method for plots
-    # ------------------
+        """Assists plotting functions with data and labeling.
+
+        Args:
+            local (:class:`~numpy.ndarray`): Local bispectrum to plot.
+
+        Returns:
+            list: ``dum,cbarstr = WhichPlot(...)``
+
+            * dum (:class:`~numpy.ndarray`) - Raw data of plottable.
+            * cbarstr (:obj:`str`) - Axis label for chosen plottable.
+
+        .. note::
+
+            Output strings include tildes when ``local`` is not ``None``!
+
+        """
         guy = self.PlotType
         if guy == 'bicoh':
             dum = self.bc
@@ -1644,9 +1674,43 @@ class BicAn:
 
 
     def PlotHelper(self,whatPlot,X,Y,IsFreq=False,CheckNeighbors=False,fig=None,ax=None,Ntrials=200,b2bins=100,cVal=0.999,SaveAs=None,NoXLabel=False):
-    # ------------------
-    # Estimate and plot distribution of b2 for single point
-    # ------------------
+        """Estimate and plot distribution of bispectrum/bicoherence for single point.
+
+        Args:
+            whatPlot (str): Input string indicating desired plot.
+                Accepts ``'b2Prob'``, ``'Phasor'``, or ``'BvsTime'``. 
+            X (list): Frequency 1 (:attr:`ft` bin or frequency).
+            Y (list): Frequency 2 (:attr:`ft` bin or frequency).
+            IsFreq (bool): ``True`` for ``X`` and ``Y`` in frequency units.
+            CheckNeighbors (bool): Perform analysis on nearby points.
+            fig (:obj:`~matplotlib.figure.Figure`): Input figure.
+            ax (:obj:`~matplotlib.axes.Axes`): Input axes.
+            Ntrials (int): Number of random trials for uncertainty analysis (``whatPlot='b2Prob'``).
+            b2bins (int): Number of bicoherence bins in uncertainty analysis (``whatPlot='b2Prob'``).
+            cVal (float): Critical level for random phase b2 estimate (``whatPlot='b2Prob'``).
+            NoXLabel (bool): Omit x axis label.
+
+        Returns:
+            list: Output of uncertainty analysis (i.e., empty list if ``whatPlot!='b2Prob'``).
+
+            ``[<bootstrap mean>, <bootstrap std>, <critical b2>, <noise floor>]``
+
+        .. caution::
+
+            When ``IsFreq = True``, the corresponding frequency bin is 
+            dependent on the :attr:`FScale` attribute, i.e., 
+            ``X=[6],Y=[7]`` indicates 6 and 7 **kHz** for ``FScale=3``
+            but 6 and 7 **nHz** for ``FScale=-9``.
+
+        .. seealso::
+
+            :func:`BicAn.PlotPointOut`
+                Wrapper function with simpler interface.
+
+            :func:`BicAn.PlotGUI`
+                Graphical interface which subsumes :func:`BicAn.PlotPointOut` and :func:`BicAn.PlotHelper`.
+
+        """
 
         out = []
         doShow = False
