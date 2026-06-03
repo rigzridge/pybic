@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Polyspectral analysis toolkit for Python.
+r"""Polyspectral analysis toolkit for Python.
 
 .. code-block:: text
 
@@ -113,10 +113,12 @@ along with this program.  If not, see http://www.gnu.org/licenses/.
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 6/03/2026 -> Cleaned up some broken docstrings (""" -> r""" and done!)
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 6/02/2026 -> Finally debugged colormap radiobuttons; fixed interpolation 
 # issue in PlotInstFreq(); reverted 'quad_couple' test signal for Colab;
 # better input checking for CheckCouple() [won't accept bins > NFreq];
-# removed redundant method Apply Bandpass -> renamed ApplySimpleFilter() 
+# removed redundant method ApplyBandpass() -> renamed ApplySimpleFilter() 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 5/27/2026 -> Fixed "plot3d = True" option in PlotBispec()
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -558,9 +560,9 @@ class BicAn:
     PlotIt    = True
     """bool: Run :func:`BicAn.PlotGUI` after analysis is complete."""
     CMap      = 'viridis'
-    """str: Colormap for plots. 
-    Accepts both custom and `standard matplotlib` colormaps. 
-    .. _standard matplotlib: https://matplotlib.org/stable/users/explain/colors/colormaps.html"""
+    """str or :obj:`matplotlib.colors.ListedColormap`: Colormap for plots. 
+    Accepts both custom and standard matplotlib colormaps 
+    (see https://matplotlib.org/stable/users/explain/colors/colormaps.html)."""
     CbarNorth = True
     """bool: Place colorbar above plot. 
     Setting ``CbarNorth = False`` places colorbar to the "east" of the plot."""
@@ -739,12 +741,14 @@ class BicAn:
         return min(self.Raw.shape)
 
     @property
-    def Samples(self): # Samples in data
-        """int: Number of input time series."""
+    def Samples(self): 
+        """int: Number of samples in processed data."""
         return max(self.Raw.shape) if len(self.Processed)==0 else max(self.Processed.shape)
 
     @property
-    def LineColor(self): # For coloring plots
+    def LineColor(self):
+        """str or :obj:`matplotlib.colors.ListedColormap`: Line color in plots.
+        See :attr:`CMap` attribute for more info!"""
         if isinstance(self.CMap,mpl.colors.ListedColormap):
             return self.CMap(np.linspace(0,1,256))[:,0:3]
         else:
@@ -1039,7 +1043,7 @@ class BicAn:
 
 
     def Bicoherence(self):
-        """Class wrapper for bispectral analysis.
+        r"""Class wrapper for bispectral analysis.
 
         .. note::
 
@@ -1675,7 +1679,7 @@ class BicAn:
             Ntrials (int): Number of random trials for uncertainty analysis (``whatPlot='b2Prob'``).
             b2bins (int): Number of bicoherence bins in uncertainty analysis (``whatPlot='b2Prob'``).
             cVal (float): Critical level for random phase b2 estimate (``whatPlot='b2Prob'``).
-            SaveAs (str): Name of output file (if not :obj:`none`.)
+            SaveAs (str): Name of output file (if not :obj:`None`.)
             NoXLabel (bool): Omit x axis label.
 
         Returns:
@@ -1897,7 +1901,7 @@ class BicAn:
             Y (list): Frequency 2 (:attr:`ft` bin or frequency).
             IsFreq (bool): ``True`` for ``X`` and ``Y`` in frequency units.
             PlotAll (bool): Plot all available facets of bispectral analysis.
-            SaveAs (str): Name of output file (if not :obj:`none`).
+            SaveAs (str): Name of output file (if not :obj:`None`).
             CheckNeighbors (bool): Perform analysis on nearby points.
             Ntrials (int): Number of random trials for uncertainty analysis.
 
@@ -1962,7 +1966,7 @@ class BicAn:
         """Refreshes GUI as initiated by :func:`BicAn.PlotGUI`.
 
         Args:
-            SaveAs (str): Name of output file (if not :obj:`none`).
+            SaveAs (str): Name of output file (if not :obj:`None`).
         """
         fig = self.Figure
 
@@ -2004,8 +2008,8 @@ class BicAn:
         """Main graphical interface for exploring :class:`BicAn` data.
 
         Args:
-            SaveAs (str): Name of output file (if not :obj:`none`).
-            subplotType (str): Swap bispectrum anf spectrogram (if not :obj:`none`).
+            SaveAs (str): Name of output file (if not :obj:`None`).
+            subplotType (str): Swap bispectrum anf spectrogram (if not :obj:`None`).
         """
         fig = plt.figure(dpi=self.PlotDPI) ###,figsize=[9,6])
 
@@ -2033,7 +2037,7 @@ class BicAn:
 
 
     def FindMaxInRange(self,FxLo,FxHi,FyLo,FyHi,useb2=True):
-        """Finds maximum bicoherence in given range.
+        r"""Finds maximum bicoherence in given range.
 
         Helpful for tracking a particular feature over time.
 
@@ -2259,24 +2263,29 @@ class BicAn:
 
 
     def InstDiffFreq(self,j,k,fband=0,fwindow=0,dist='gauss',plot=True,err=False,histo=False):
-        """Plot the instantaneous difference frequency.
+        r"""Plot the instantaneous difference frequency vs normalized bispectral modulus.
 
         Here we define 
 
         .. math::
 
-            \Delta f_{\rm inst}(t) \equiv \frac{1}{2\pi}\frac{d\varsigma(t)}{dt},
+            \Delta f_{\rm inst}(t) \equiv \frac{1}{2\pi}\frac{d\beta(t)}{dt},
 
-        where the n-phase :math:`\varsigma` is given by
+        where, for a single value in bifrequency space :math:`(f_1,f_2)`, 
+        the local bispectrum :math:`\widetilde{\mathcal{B}}` is given by
 
         .. math::
 
-            \varsigma(f_1,\dots,f_{n-1}) = 
-            \left(\sum_{i=1}^{n-1} \varphi_i(f_i)\right) - 
-            \varphi_{n}%(f_k)
-            \left({\textstyle\sum}_{j=1}^{n-1} f_j \right),
+            \widetilde{\mathcal{B}}(t) = X(t,f_1)X(t,f_2)X^*(t,f_1+f_2) 
+            = |\widetilde{\mathcal{B}}(t)| e^{i \beta(t)},
 
-        defining the phases :math:`\varphi_i` via :math:`\hat x_i(f) = |\hat x_i(f)|e^{i\varphi_i(f)}`.
+        where :math:`X(t,f)` is a time-frequency representation. The biphase :math:`\beta(t)` is then
+
+        .. math::
+
+            \beta(t) = \varphi(t,f_1) + \varphi(t,f_2) - \varphi(t,f_1+f_2),
+
+        defining the phases :math:`\varphi(t,f)` via :math:`X(t,f) = |X(t,f)|e^{i\varphi(t,f)}`.
 
         Args:
             j (int): Index 1.
@@ -2571,15 +2580,16 @@ class BicAn:
 
 
     def PlotPhaseDist(self,j,k,ylim=1,SaveAs=None):
-        """Simple file picker dialog.
+        """Plots phase distribution of single point in bifrequency space.
 
-        Stolen from StackExchange!
+        Args:
+            j (int): Index 1.
+            k (int): Index 2.
+            ylim (float): Y-axis limit.
+            SaveAs (str): Output filename.
 
         Returns:
-            str: User answer.
-
-        XXXXXXXXXX
-
+            list: ``[<phase bins>, <unweighted pdf>, <weighted pdf>]``
         """
         fig,ax = plt.subplots(dpi=self.PlotDPI)
 
@@ -2621,7 +2631,6 @@ def FileDialog():
 
     Returns:
         str: User answer.
-
     """
     root = tk.Tk()
     root.withdraw()
@@ -3807,7 +3816,7 @@ def ApplyDetrend(y):
 
 
 def ScaleToString(scale):
-    """Converts order of magnitude to `metric prefix`_.
+    r"""Converts order of magnitude to `metric prefix`_.
 
     Args:
         scale (int): Order of magnitude. Support for :math:`\in [-15,15]`.
@@ -3859,10 +3868,22 @@ def LoadBar(m, M, bar_length=40):
 
 
 def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None,fsize=14):
-# ------------------
-# Plot line with color
-# ------------------
-    ### Sourced from https://matplotlib.org/3.1.1/gallery/lines_bars_and_markers/multicolored_line.html
+    """Plot line with color.
+
+    Sourced from https://matplotlib.org/3.1.1/gallery/lines_bars_and_markers/multicolored_line.html.
+
+    Args:
+        x (:class:`~numpy.ndarray`): X data.
+        y (:class:`~numpy.ndarray`): Y data.
+        t (:class:`~numpy.ndarray`): "time" data.
+        fig (:obj:`~matplotlib.figure.Figure`): Input figure.
+        ax (:obj:`~matplotlib.axes.Axes`): Input axes.
+        lw (float): Linewidth.
+        cmap (str): Colormap.
+        cbar (bool): Include colorbar.
+        fsize (float): Font size.
+
+    """
     from matplotlib.collections import LineCollection
 
     if fig is None:
@@ -3893,6 +3914,7 @@ def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None,fsize=1
         cax.set_xlabel(cbar,fontsize=fsize) ###, fontweight=fweight)
         # fig.colorbar(line, ax=ax, label=cbar)
 
+
 def Plot(dats,strings=None,color=None,alpha=1.,marker=None,ms=6,lw=2,ls='-',fsize=20,fweight='normal',grid=True,
                 minorgrid=True,minorgridColor=[0.9,0.9,0.9],tickweight='bold',xlim=None,ylim=None,forceGrid=False,
                 cmap='CMRmap',cbarNorth=False,cbarweight='none',cbarfsize=None,cbarPad=0.05,vlim=None,cax=None,
@@ -3909,9 +3931,9 @@ def Plot(dats,strings=None,color=None,alpha=1.,marker=None,ms=6,lw=2,ls='-',fsiz
     Returns:
         list: ``fig,ax,cax = Plot(...)``
 
-        * fig (:obj:`~matplotlib.figure.Figure`) - Polycoherence value.
-        * ax (:obj:`~matplotlib.axes.Axes`) - Polyspectrum value.
-        * cax (:obj:`~matplotlib.axes.Axes`) - **Local** (i.e., time-dependent) polyspectrum.
+        * fig (:obj:`~matplotlib.figure.Figure`) - Output figure.
+        * ax (:obj:`~matplotlib.axes.Axes`) - Output axes.
+        * cax (:obj:`~matplotlib.axes.Axes`) - Colorbar axes (else :obj:`None`).
 
     .. _Jupyter notebook:
         https://colab.research.google.com/drive/1NJmjnkhD9wWd_uYRYDWSOEatzS_5Nzm3?usp=sharing
