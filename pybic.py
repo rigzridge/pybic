@@ -78,6 +78,7 @@ of PyBic and a `demonstration`_ of the :func:`~pybic.Plot` function.
     * Auto-filters! (none)
     * Video output (none)
     * Base units (none)
+    * Cross stuff in :func:`BicAn.FindMaxInRange` (none)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -112,11 +113,16 @@ along with this program.  If not, see http://www.gnu.org/licenses/.
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 6/02/2026 -> Finally debugged colormap radiobuttons; fixed interpolation 
+# issue in PlotInstFreq(); reverted 'quad_couple' test signal for Colab;
+# better input checking for CheckCouple() [won't accept bins > NFreq];
+# removed redundant method Apply Bandpass -> renamed ApplySimpleFilter() 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 5/27/2026 -> Fixed "plot3d = True" option in PlotBispec()
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 5/22/2026 -> Removed LoadBarOLD() and added more docstrings 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# 5/1/2026 -> Fixed plot labels in various Plot...() methods to better reflect 
+# 5/01/2026 -> Fixed plot labels in various Plot...() methods to better reflect 
 # normalized analysis, ie, f given in units of fs; LoadBar output cleaned up;
 # removed vestigial access to FreqRes attribute; SizeWarnPrompt debugged;
 # eliminated unused Verbose attribute; testing detection of time vector
@@ -456,7 +462,7 @@ class BicAn:
     """
     
     # Attributes
-    Date      = datetime.now()
+    Date = datetime.now()
     """:class:`~datetime.datetime`:  Date when :mod:`pybic` is loaded."""
 
     # Private attributes
@@ -603,12 +609,18 @@ class BicAn:
     TZero     = 0.
     """float: Initial time."""
 
-    Figure    = 0
+    Figure    = None
     """:obj:`~matplotlib.figure.Figure`: Used for :func:`BicAn.PlotGUI()` functionality."""
-    AxHands   = [0,0,0]
+    AxHands   = [None,None,None]
+    """list of :obj:`~matplotlib.axes.Axes`: List of axes handles."""
+    tkVar     = None
+    """:obj:`~tkinter.StringVar`: Variable for tkinter."""
+    tkRoot    = None
+    """:obj:`tkinter`: Root window for tkinter."""
     CaxHands  = [None,None]
+    """list of :obj:`~matplotlib.axes.Axes`: List of colorbar axes handles."""
     NewGUICax = False
-    """bool: Plot linewidths."""
+    """bool: Flag for creating new colorbar axes."""
 
     tv = []
     """:class:`~numpy.ndarray`: Time vector associated with time-frequency representation"""
@@ -681,13 +693,7 @@ class BicAn:
             if attrLow in lower_list:
                 k = lower_list.index(attrLow)
                 print('Did you mean {}?'.format(dum_dir[k]))
-
         else:
-            # if isinstance(val, type( eval('self.{}'.format(attr)) ) ):
-            #     print('Same class!')
-            # else:
-            #     print('Wrong class!')
-
             if attr in ['PlotType','SpecType','TScale','FScale']:
                 if attr=='PlotType':
                     opts = ['bicoh','abs','real','imag','angle','mean','std','hybrid']
@@ -746,9 +752,13 @@ class BicAn:
 
 
     def ParseInput(self,inData,kwargs):
-    # ------------------
-    # Handle inputs
-    # ------------------
+        """Parse inputs for :class:`BicAn` constructor.
+
+        Args:
+            inData (:class:`~numpy.ndarray` or :obj:`str`): Time series to be analyzed **or** :func:`~pybic.TestSignal` string. 
+                Using ``'input'`` opens :func:`~pybic.FileDialog` window to choose a local file for input.
+            kwargs (dict): Keyword-argument pairs to set attributes.
+        """
         self._RunBicAn = True  
         print('Checking inputs...') 
 
@@ -896,7 +906,7 @@ class BicAn:
 
 
     def ProcessData(self):
-        """Main processing loop.
+        """Main processing loop (see source code).
         """
         start = time.time()
  
@@ -1070,7 +1080,7 @@ class BicAn:
 
 
     def Tricoherence(self):
-        """Class wrapper for trispectral analysis.
+        """Class wrapper for trispectral analysis (:func:`SpecToTrispec`).
 
         .. note::
 
@@ -1105,7 +1115,6 @@ class BicAn:
 
         Args:
             Ntrials (int): Number of randomized trials.
-
         """ 
         n,m,r = self.sg.shape
 
@@ -1135,7 +1144,7 @@ class BicAn:
 
 
     def MonteCarloMax(self,N=2,Nrolls=1000,critCoh=1.0,plot=False,verbose=False):
-        """Identifies maxima in N-coherence spectra using random restart hillclimb.
+        """Identifies maxima in N-coherence spectra with random restart hillclimb.
 
         Uses absolute value of spectrogram :attr:`sg` and randomized phases.
 
@@ -1145,7 +1154,6 @@ class BicAn:
             critCoh (float): Critical level of ``N``-coherence.
             plot (bool): Plot data (``N`` must be ``2`` or ``3``).
             verbose (bool): Show tested frequencies.
-
         """  
         start = time.time()
 
@@ -1308,7 +1316,6 @@ class BicAn:
                 Default behavior creates new figure and axes with :func:`~matplotlib.pyplot.subplots`.
             crossSpec (bool): Plots absolute value of cross-spectrum if ``True``.
             vLim  (list): Logarithmic y-limits of plot ``[vmin,vmax]``, defaults to data range.
-
         """
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
@@ -1346,7 +1353,6 @@ class BicAn:
             vLim  (list): Logarithmic y-limits of plot ``[vmin,vmax]``, defaults to data range.
             maxLine (float): Overplots peak of spectrogram vs time if ``maxLine>=0``.
                 Nonnegative input also populates the :attr:`InstFreq` attribute!
-
         """
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
@@ -1399,7 +1405,6 @@ class BicAn:
             *args (list): Input :obj:`~matplotlib.figure.Figure` and :obj:`~matplotlib.axes.Axes` as ``[fig,ax]``.
                 Default behavior creates new figure and axes with :func:`~matplotlib.pyplot.subplots`.
             vLim  (list): Logarithmic y-limits of plot ``[vmin,vmax]``, defaults to data range.
-
         """
         if len(args)==0:
             fig, ax = plt.subplots(dpi=self.PlotDPI)
@@ -1524,7 +1529,7 @@ class BicAn:
         """Plots trispectrum or tricoherence spectrum.
 
         Args:
-            Tval (float): Critical value of tricoherence (omits all data below).
+            Tval (float): Critical value of tricoherence (omits all data below this value).
             colorTricoh (bool): Color data with tricoherence (``True``) or triphase (``False``).
             elev (float): Viewpoint angle above xy axes.
             azim (float): Viewpoint azimuth around z axis.
@@ -1532,14 +1537,9 @@ class BicAn:
             shrink (float): Shrink factor of colorbar.
             squeezeAxes (bool): Shrink y/z-axes to eliminate white space in plot.
 
-        .. note::
-
-            The output of ``PlotBispec()`` depends on the :attr:`PlotType` attribute!
-            For example, ``PlotType = 'bicoh'`` provides the bicoherence spectrum,
-            while, ``PlotType = 'angle'`` plots the biphase spectrum.
-
+        Returns:
+            list of int: Coordinates of maximum value of tricoherence.
         """
-
         f = self.fv / 10**self.FScale
         lim = len(f)
         lim2 = lim//2
@@ -1571,8 +1571,6 @@ class BicAn:
 
         ax.view_init(elev=elev, azim=azim, roll=roll)
 
-        #isosurface(f(1:lim),f(1:lim2),f(1:lim3),bic.tc,Tval,angle(bic.ts))
-
         if squeezeAxes:
             ax.set_xlim(0,f[-1]) 
             ax.set_ylim(0,f[-1]/2)
@@ -1581,22 +1579,11 @@ class BicAn:
             ax.set_xlim(0,f[-1]) 
             ax.set_ylim(0,f[-1])
             ax.set_zlim(0,f[-1])
-        
-        # d = {['Max::' num2str(max_t)];...
-        #     ['Current::' num2str(Tval)]};
-        # text(0.85,0.9, d ,...
-        #              'units','normalized',...
-        #              'color','black');
 
         fstr1 = r'$f_1/f_s$' if self._NormToNyq else r'$f_1\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         fstr2 = r'$f_2/f_s$' if self._NormToNyq else r'$f_2\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         fstr3 = r'$f_3/f_s$' if self._NormToNyq else r'$f_3\,[\mathrm{%sHz}]$' % (ScaleToString(self.FScale))
         cax = PlotLabels(fig,ax,[fstr1,fstr2,fstr3,cbarstr],self.FontSize,self.CbarNorth,im,None,shrink=shrink)
-
-        # divider = make_axes_locatable(ax)
-        # cbarloc = 'top' if self.CbarNorth else 'right'
-        # cax = divider.append_axes(cbarloc, size='5%', pad=0.05)
-        #fig.colorbar(im,ax=ax,shrink=0.75)
 
         # Find maximum
         max_ind = np.unravel_index(np.argmax(self.tc),self.tc.shape)
@@ -1679,8 +1666,8 @@ class BicAn:
         Args:
             whatPlot (str): Input string indicating desired plot.
                 Accepts ``'b2Prob'``, ``'Phasor'``, or ``'BvsTime'``. 
-            X (list): Frequency 1 (:attr:`ft` bin or frequency).
-            Y (list): Frequency 2 (:attr:`ft` bin or frequency).
+            X (list): Frequency 1 (:attr:`fv` bin or frequency).
+            Y (list): Frequency 2 (:attr:`fv` bin or frequency).
             IsFreq (bool): ``True`` for ``X`` and ``Y`` in frequency units.
             CheckNeighbors (bool): Perform analysis on nearby points.
             fig (:obj:`~matplotlib.figure.Figure`): Input figure.
@@ -1688,6 +1675,7 @@ class BicAn:
             Ntrials (int): Number of random trials for uncertainty analysis (``whatPlot='b2Prob'``).
             b2bins (int): Number of bicoherence bins in uncertainty analysis (``whatPlot='b2Prob'``).
             cVal (float): Critical level for random phase b2 estimate (``whatPlot='b2Prob'``).
+            SaveAs (str): Name of output file (if not :obj:`none`.)
             NoXLabel (bool): Omit x axis label.
 
         Returns:
@@ -1711,7 +1699,6 @@ class BicAn:
                 Graphical interface which subsumes :func:`BicAn.PlotPointOut` and :func:`BicAn.PlotHelper`.
 
         """
-
         out = []
         doShow = False
         if fig is None:
@@ -1903,10 +1890,20 @@ class BicAn:
 
 
     def PlotPointOut(self,X,Y,IsFreq=False,PlotAll=False,SaveAs=None,CheckNeighbors=False,Ntrials=200):
-    # ------------------
-    # Plot value of b^2 over time
-    # ------------------
+        """Wraps :func:`BicAn.PlotHelper` for :func:`BicAn.PlotGUI`.
 
+        Args:
+            X (list): Frequency 1 (:attr:`ft` bin or frequency).
+            Y (list): Frequency 2 (:attr:`ft` bin or frequency).
+            IsFreq (bool): ``True`` for ``X`` and ``Y`` in frequency units.
+            PlotAll (bool): Plot all available facets of bispectral analysis.
+            SaveAs (str): Name of output file (if not :obj:`none`).
+            CheckNeighbors (bool): Perform analysis on nearby points.
+            Ntrials (int): Number of random trials for uncertainty analysis.
+
+        Returns:
+            list of int: Indices of :attr:`fv` corresponding to ``X``, ``Y``.
+        """
         if PlotAll: 
 
             old_plotType = self.PlotType
@@ -1959,13 +1956,14 @@ class BicAn:
             self.PlotHelper('BvsTime',X=X,Y=Y,IsFreq=IsFreq,SaveAs=SaveAs,CheckNeighbors=CheckNeighbors)
 
         return X,Y
-        
 
 
     def RefreshGUI(self,SaveAs=None):
-    # ------------------
-    # GUI test
-    # ------------------ 
+        """Refreshes GUI as initiated by :func:`BicAn.PlotGUI`.
+
+        Args:
+            SaveAs (str): Name of output file (if not :obj:`none`).
+        """
         fig = self.Figure
 
         # ax1 = self.AxHands[0]
@@ -2003,9 +2001,12 @@ class BicAn:
 
 
     def PlotGUI(self,SaveAs=None,subplotType=None):
-    # ------------------
-    # GUI test
-    # ------------------
+        """Main graphical interface for exploring :class:`BicAn` data.
+
+        Args:
+            SaveAs (str): Name of output file (if not :obj:`none`).
+            subplotType (str): Swap bispectrum anf spectrogram (if not :obj:`none`).
+        """
         fig = plt.figure(dpi=self.PlotDPI) ###,figsize=[9,6])
 
         if subplotType is None:
@@ -2032,13 +2033,24 @@ class BicAn:
 
 
     def FindMaxInRange(self,FxLo,FxHi,FyLo,FyHi,useb2=True):
-    # ------------------
-    # Finds maximum bicoherence in given range
-    # Good for tracking a particular feature
-    # ------------------
-        
-        # TODO: Set up for cross-b^2 and tricoherence
+        """Finds maximum bicoherence in given range.
 
+        Helpful for tracking a particular feature over time.
+
+        Args:
+            FxLo (float): Low (x-)frequency limit.
+            FxHi (float): High (x-)frequency limit.
+            FyLo (float): Low (y-)frequency limit.
+            FyHi (float): High (y-)frequency limit.
+            useb2 (bool): Use max bicoherence.
+                Finds max bispectral modulus :math:`|\mathcal{B}|` if ``False``.
+
+        .. caution::
+
+            This method does not work properly with **cross**-bispectral 
+            analysis at present!
+
+        """
         # Transform to desired scaling
         dum = self.fv / 10**self.FScale
         vx = (dum>FxLo) * (dum<FxHi) * 1
@@ -2046,10 +2058,6 @@ class BicAn:
         
         vy = vy[0:len(vy)//2]
         
-        # bicMask = vy.' * vx;
-        # dumBic = bicMask .* bic.bc
-        # [maxVal,Ic] = max(max(dumBic))
-        # [~,Ir] = max(max(dumBic.'))
         bicMask = np.outer(vy,vx)
         dumBic = bicMask * self.bc if useb2 else bicMask * abs(self.bs)
 
@@ -2067,50 +2075,14 @@ class BicAn:
         print('Scaled frequency equivalents are freqX = %.2f, freqY = %.2f' % (fX,fY))
 
         return Ir,Ic,maxVal
-        
-        
-        # function [Ir,Ic,maxVal] = FindMaxAboveLim(bic,FreqLow)
-        # % ------------------
-        # % Finds maximum bicoherence above frequency limit
-        # % Good for ignoring low-frequency shizz
-        # % ------------------
-        
-        # % Get maxima in each column
-        # [m,I] = max(bic.bc);
-        # % Sort in descending order
-        # [mSorted,IX] = sort(m,'descend');
-        
-        # stillLooking = true;
-        # cnt = 1;
-        # % Walk down list of maxima, choose the first above limit
-        # while stillLooking
-        #     % Get column of current maximum
-        #     testCol = IX(cnt);
-        #     if ( bic.fv(testCol) / 10^bic.FScale ) > FreqLow
-        #         % Boom!
-        #         stillLooking = false;
-        #     else
-        #         cnt = cnt + 1;
-        #     end          
-        # end
-        
-        # maxVal = mSorted(cnt);
-        # Ic = testCol;
-        # Ir = I(testCol);
-        
-        # fX = bic.fv(Ic) / 10^bic.FScale;
-        # fY = bic.fv(Ir) / 10^bic.FScale;
-        
-        # fprintf('Maximum found! Value is %.4f @ row = %d, column = %d\n',maxVal,Ir,Ic);
-        # fprintf('Scaled frequency equivalents are freqX = %.2f, freqY = %.2f\n',fX,fY);
-        
-        # end % FindMaxAboveLim
 
 
     def SizeWarnPrompt(self,n):
-    # ------------------
-    # Prompt for CPU health
-    # ------------------
+        """Modal warning about large FFT size.
+
+        Args:
+            n (int): Requested size.
+        """
         qwer = messagebox.askokcancel('Question',f'FFT elements exceed {self._WarnSize}! ({n}) Continue?')
         if not qwer:
             print('Operation terminated by user.')
@@ -2121,9 +2093,11 @@ class BicAn:
 
 
     def ClickPlot(self,event):
-    # ------------------
-    # Callback for clicks
-    # ------------------
+        """Callback for :func:`BicAn.PlotGUI` clicks.
+
+        Args:
+            event (:obj:`~matplotlib.backend_bases.MouseEvent`): Click event object.
+        """
         ax = event.inaxes
         print('ax is',ax)
         if ax == self.AxHands[0]: # Check bispectrum
@@ -2176,9 +2150,11 @@ class BicAn:
 
 
     def SwitchPlot(self,event):
-    # ------------------
-    # Callback for keypress
-    # ------------------
+        """Callback for :func:`BicAn.PlotGUI` keypresses.
+
+        Args:
+            event (:obj:`~matplotlib.backend_bases.KeyEvent`): Key event object.
+        """
         key  = event.key
         opts = 'BARIPMSH'
         sel  = '!@#'
@@ -2194,7 +2170,6 @@ class BicAn:
             else:
                 print('Not available!')
         elif key == 'h':
-            choiceBox()
             print('Some kind of help menu here!')
         elif key == 'X': # Reset GUI
             self.PlotSlice = None
@@ -2204,6 +2179,8 @@ class BicAn:
             self.BicOfTime = not self.BicOfTime
         elif key == 'F':
             self.InstFreqFlag = not self.InstFreqFlag
+        elif key == 'C':
+            self.SwitchCMap()
         elif key == 'right':
             self.PlotSlice = 0 if self.PlotSlice is None else (self.PlotSlice + 10) % len(self.tv) 
         elif key == 'left':
@@ -2216,50 +2193,52 @@ class BicAn:
         return
 
 
+    def SwitchCMap(self):
+        """Interactive colormap selection.
 
+        See :func:`BicAn.SwitchPlot` for more info!
 
-    def choiceBox(self):
+        """
 
-        root = tk.Tk()
+        self.tkRoot = tk.Tk()
+        self.tkVar = tk.StringVar(value='viridis',master=self.tkRoot)
 
-        v = tk.IntVar()
-        v.set(1)  # initializing the choice, i.e. Python
+        cmaps = ['viridis','gnuplot2','PiYG']
 
-        languages = [('viridis', 0),
-                     ('gnuplot2', 1),
-                     ('PiYG', 2),
-                     ("C++", 104),
-                     ("C", 105)]
-
-        tk.Label(root, 
-                 text="""Choose your favourite 
-        programming language:""",
+        tk.Label(self.tkRoot, 
+                 text = 'Pick a colormap!',
                  justify = tk.LEFT,
                  padx = 20).pack()
 
-        for language, val in languages:
-            tk.Radiobutton(root, 
-                           text=language,
+        for cmap in cmaps:
+            tk.Radiobutton(self.tkRoot, 
+                           text = cmap,
                            padx = 20, 
-                           variable=v, 
-                           command=self.DumFunc,
-                           value=val).pack(anchor=tk.W)
-
-
-        #root.mainloop()
+                           variable = self.tkVar, 
+                           command = self.SwitchCMapClick,
+                           value = cmap
+                           ).pack(anchor=tk.W)
         return
 
-    def DumFunc(self):
-        #self.CMap = 
-        print(event)
+
+    def SwitchCMapClick(self):
+        """Callback function for :func:`BicAn.SwitchCMap`."""
+
+        self.CMap = self.tkVar.get()
+        self.tkRoot.destroy()
+        self.RefreshGUI()
         return
 
 
     def CheckCouple(self,f,checkdiff=False):
-    # ------------------
-    # For a given test vector of freqs, check nth order coupling
-    # ------------------
-        f = f if self._Nseries==1 else np.array(X) - len(self.fv)
+        """Check nth order coupling for a given test vector of freqs. 
+
+        Args:
+            f (list): List of frequency bins.
+            checkdiff (bool): Check for difference frequency coupling.
+
+        """
+        f = f if self._Nseries==1 else np.array(f) - len(self.fv)
 
         n = len(f)
         mask = bin_mat(n)
@@ -2270,16 +2249,55 @@ class BicAn:
             if checkdiff:
                 #dum[0] = f[0] + np.sum(-dum[1::])
                 dum[0] = sum(f)
-            out[k],_,_ = GetPolySpec(self.sg,dum,self.LilGuy)
+            try:
+                out[k],_,_ = GetPolySpec(self.sg,dum,self.LilGuy)
+            except:
+                print(f'Whoops... the requested sum bin (# {sum(dum)}) is greater than NFreq ({self.NFreq})!')
             print(dum,'=',self.fv[1]*dum/10**self.FScale, '%sHz' % (ScaleToString(self.TScale)),' ~>',out[k])
         print('Mean is ',np.mean(out))
         return out
 
 
     def InstDiffFreq(self,j,k,fband=0,fwindow=0,dist='gauss',plot=True,err=False,histo=False):
-    # ------------------
-    # Kind of like a beefed up GetBispec()
-    # ------------------
+        """Plot the instantaneous difference frequency.
+
+        Here we define 
+
+        .. math::
+
+            \Delta f_{\rm inst}(t) \equiv \frac{1}{2\pi}\frac{d\varsigma(t)}{dt},
+
+        where the n-phase :math:`\varsigma` is given by
+
+        .. math::
+
+            \varsigma(f_1,\dots,f_{n-1}) = 
+            \left(\sum_{i=1}^{n-1} \varphi_i(f_i)\right) - 
+            \varphi_{n}%(f_k)
+            \left({\textstyle\sum}_{j=1}^{n-1} f_j \right),
+
+        defining the phases :math:`\varphi_i` via :math:`\hat x_i(f) = |\hat x_i(f)|e^{i\varphi_i(f)}`.
+
+        Args:
+            j (int): Index 1.
+            k (int): Index 2.
+            fband (float): Instantaneous frequency bandwidth. 
+                **Presently affects only the output distribution!**
+            fwindow (float): Limits for x (frequency) axis.
+            dist (str): Choose Gaussian (``'gauss'``) or Lorentzian distribution.
+            plot (bool): Plot inst diff freq vs. time.
+            err (bool): Plot errorbars instead of timeline.
+            histo (bool): Plot phase histogram.
+
+        Returns:
+            list: ``freq, amp, freq_err, um = InstDiffFreq(...)``
+
+            * freq (:class:`~numpy.ndarray`) - Instantaneous difference frequency.
+            * amp (:class:`~numpy.ndarray`) - Normalized bispectral modulus.
+            * freq_err (:class:`~numpy.ndarray`) - Std dev of inst diff freq.
+            * um (:class:`~numpy.ndarray`) - Contrived freq-amp distribution.
+
+        """
         b2est,_,Bi = GetBispec(self.sg,self.BicVec,self.LilGuy,j=j,k=k)
         dt = self.tv[1]-self.tv[0]
         dBeta_dt = dphase_dt(Bi) / dt
@@ -2347,11 +2365,13 @@ class BicAn:
 
 
     def InstAmpFreq(self,j,calc_type='hilbert',fband=0,realBPF=True,avPoints=50,IsFreq=False):
-    # ------------------
-    # Perform instantaneous amplitude and frequency analysis
-    # ------------------
+        """Perform instantaneous amplitude and frequency analysis.
 
-    # NEEDS FINISHED!!!
+        .. caution::
+
+            This method is not yet complete... Use at your own peril!
+
+        """
         if IsFreq:    
             _,j = arrmin(abs( self.fv/10**self.FScale - j ))
         
@@ -2413,10 +2433,28 @@ class BicAn:
 
 
     def PlotInstFreq(self,j,k,diff_freq=True,freq_type='hilbert',fband=0,fwindow=0,realBPF=True,SaveStr='',dWin=None):
-    # ------------------
-    # Perform instantaneous frequency analysis
-    # ------------------
-        
+        """Perform instantaneous frequency analysis.
+
+        .. hint::
+
+            See :func:`BicAn.InstDiffFreq` for more info on the *instantaneous difference frequency*!
+
+        Args:
+            j (int): Index 1.
+            k (int): Index 2.
+            diff_freq (bool): Plot difference frequency instead of individual inst freqs (``False``).
+            freq_type (str): Desired means of estimatinf instantaneous frequencies.
+                Present support for time derivative of spectrogram (``'spectro'``), 
+                Hilbert transform (``'hilbert'``), or zero crossings (``'zerocross'``).
+            fband (float): Bandpass filter bandwidth.
+            fwindow (float): Limits for x (frequency) axis.
+            realBPF (bool): Use Butterworth bandpass (brickwall if ``False``).
+            SaveStr (str): Output filename.
+            dWin (list of int): Plot "region of interest" from ``dWin[0]`` to ``dWin[1]``. 
+
+        Returns:
+            :class:`~numpy.ndarray`: Array of instantaneous frequencies.
+        """
         arr = [j,k,j+k]
 
         fband = self.SampRate/200 if fband==0 else fband
@@ -2453,7 +2491,7 @@ class BicAn:
                 if freq_type=='hilbert':
                     dum = hilbert(dum)
                 else:
-                    Ninterp = None if self.SampRate/f0 > 10 else int(10*len(dum)*f0/self.SampRate)
+                    Ninterp = None if self.SampRate/flim > 50 else int(50*len(dum)*flim/self.SampRate)
                     T,freq = InstFreqZeroCross(dum,dt=dt,Ninterp=Ninterp,T0=self.TZero)
                     # Interpolate for convenience!
                     freq = np.interp(t,T/10**self.TScale,freq)
@@ -2533,9 +2571,16 @@ class BicAn:
 
 
     def PlotPhaseDist(self,j,k,ylim=1,SaveAs=None):
-    # ------------------
-    # Plot phase distribution of single point
-    # ------------------
+        """Simple file picker dialog.
+
+        Stolen from StackExchange!
+
+        Returns:
+            str: User answer.
+
+        XXXXXXXXXX
+
+        """
         fig,ax = plt.subplots(dpi=self.PlotDPI)
 
         N = 16
@@ -2570,9 +2615,14 @@ class BicAn:
 # Module methods
 
 def FileDialog():
-# ------------------
-# Ganked from StackExchange...
-# ------------------
+    """Simple file picker dialog.
+
+    Stolen from StackExchange!
+
+    Returns:
+        str: User answer.
+
+    """
     root = tk.Tk()
     root.withdraw()
     # Build a list of tuples for each file type the file dialog should display
@@ -2583,9 +2633,19 @@ def FileDialog():
 
 
 def WhittakerShannon(x,Ninterp,fS=1.0,T0=0.0,interp='func'):
-# ------------------
-# Whittaker-Shannon interpolation
-# ------------------
+    """Whittaker-Shannon interpolation.
+
+    Args:
+        x (:class:`~numpy.ndarray`): Data to interpolate.
+        Ninterp (int): Number of interpolation points.
+        fS (float): Data sampling rate.
+        T0 (float): Initial time.
+        interp (str): Type of interpolation.
+            ``'func'``/``'diff'``/``'int'`` for function/derivative/integral.
+
+    Returns:
+        list: ``[<interpolated time>, <interpolated data>]``
+    """
     N = len(x)
     Tfinal = N/fS
     T = np.linspace(0,Tfinal,Ninterp)
@@ -2609,9 +2669,20 @@ def WhittakerShannon(x,Ninterp,fS=1.0,T0=0.0,interp='func'):
 
 
 def InstFreqZeroCross(x,dt=1.0,crossType='both',Ninterp=None,T0=0.0):
-# ------------------
-# Calculates instantaneous frequency from zero crossings
-# ------------------
+    """Calculates instantaneous frequency from zero crossings.
+
+    Args:
+        x (:class:`~numpy.ndarray`): Data to analyze.
+        dt (float): Time interval between samples.
+        crossType (str): Zero-crossing method.
+            Restrict to ``'pos2neg'``, ``'neg2pos'``, or ``'both'``.  
+        Ninterp (int): Number of interpolation points.
+        T0 (float): Initial time.
+
+    Returns:
+        list: ``[<time>, <frequency>]``
+    """
+
     T = T0 + np.arange(len(x))*dt
     if Ninterp is not None:
         T,x = WhittakerShannon(x,Ninterp,fS=1/dt,T0=T0)
@@ -2635,9 +2706,31 @@ def InstFreqZeroCross(x,dt=1.0,crossType='both',Ninterp=None,T0=0.0):
 
 
 def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True,minorgrid=True,shrink=0.7,cbarfsize=None,forceGrid=False,cbarPad=0.05,minorgridColor=[0.9,0.9,0.9],extend='neither'):
-# ------------------
-# Convenience function
-# ------------------
+    """General purpose plot labels.
+
+    Args:
+        fig (:obj:`~matplotlib.figure.Figure`): Figure.
+        ax (:obj:`~matplotlib.axes.Axes`): Axes.
+        strings (list of str): List of labels for x, y, (z, and colorbar) axes
+        fsize (float): Label font size.
+        cbarNorth (bool): Place colorbar above plot (to right if ``False``).
+        im (:obj:`~matplotlib.collections.QuadMesh`): Image data from, e.g., :obj:`~matplotlib.pyplot.pcolormesh`.
+        cax (:obj:`~matplotlib.axes.Axes`): Colorbar axes.
+        fweight (str): Font weight
+        tickweight (str): Tick label weight.
+        cbarweight (str): Colorbar label weight.
+        grid (bool): Show grids.
+        minorgrid (bool): Show minor grid.
+        shrink (float): Colorbar shrink fraction for 3D plots.
+        cbarfsize (float): Colorbar font size.
+        forceGrid (bool): Force grid.
+        cbarPad (float): Colorbar padding fraction.
+        minorgridColor (list of float): Color of minor gridlines.
+        extend (str): Extend ends of colorbar.
+
+    Returns:
+        :obj:`~matplotlib.axes.Axes`: Colorbar axes.
+    """
     n = len(strings)
 
     # Reduce fontsize for 3D plots
@@ -2712,9 +2805,22 @@ def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=Non
 
 
 def PlotRHS(x,y,ax,r_col='gray',ylab='',ylim=[],fsize=20,alph=1.0,lw=2):
-# ------------------
-# Simplifies twin-axis stuff
-# ------------------
+    """Add plot and right-hand side (RHS) label to existing plot.
+
+    Args:
+        x (:class:`~numpy.ndarray`): X data.
+        y (:class:`~numpy.ndarray`): Y data.
+        ax (:obj:`~matplotlib.axes.Axes`): Axes to plot on.
+        r_col (str or list): Data/label color.
+        ylab (str): Y axis label.
+        ylim (list of float): Y axis limits.
+        fsize (float): Font size.
+        alph (float): Alpha (transparency) parameter.
+        lw (float): Linewidth.
+
+    Returns:
+        :obj:`~matplotlib.axes.Axes`: Twinned axes.
+    """
     ax_r = ax.twinx()
 
     ax_r.plot(x, y, color=r_col, alpha=alph, lw=lw)
@@ -2733,10 +2839,23 @@ def PlotRHS(x,y,ax,r_col='gray',ylab='',ylim=[],fsize=20,alph=1.0,lw=2):
 
 
 def PlotTop(x,y,ax,col='C0',xlab='',xlim=[],fsize=20,alph=1.0,lw=2):
-# ------------------
-# Simplifies twin-axis stuff
-# ------------------
-    ax_t = ax.twinx()
+    """Add plot and top label to existing plot.
+
+    Args:
+        x (:class:`~numpy.ndarray`): X data.
+        y (:class:`~numpy.ndarray`): Y data.
+        ax (:obj:`~matplotlib.axes.Axes`): Axes to plot on.
+        col (str or list): Data/label color.
+        xlab (str): X axis label.
+        xlim (list of float): X axis limits.
+        fsize (float): Font size.
+        alph (float): Alpha (transparency) parameter.
+        lw (float): Linewidth.
+
+    Returns:
+        :obj:`~matplotlib.axes.Axes`: Twinned axes.
+    """
+    ax_t = ax.twiny()
 
     ax_t.plot(x, y, color=col, alpha=alph, lw=lw,)
 
@@ -2745,9 +2864,9 @@ def PlotTop(x,y,ax,col='C0',xlab='',xlim=[],fsize=20,alph=1.0,lw=2):
     for label in labels:
         label.set_fontweight('bold')
         label.set_color(col)
-    if len(ylim)!=0:
+    if len(xlim)!=0:
         ax_t.set_xlim(xlim[0],xlim[1])
-    ax_t.set_xlabel(xlab,fontsize=fsize)
+    ax_t.set_xlabel(xlab,fontsize=fsize,color=col)
     ax_t.tick_params(labelsize=9*fsize/10)
     ax_t.minorticks_on()
     return ax_t
@@ -2955,12 +3074,12 @@ def TestSignal(whatsig,tend=100,noisy=2,fS=200,f1=19,f2=45):
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x + y + x*y + nz
     elif dum == 'cube_couple':
-        # x,t,_ = SignalGen(fS,tend,fx=13,noisy=0)
-        # y,_,_ = SignalGen(fS,tend,fx=17,noisy=0)
-        # z,_,_ = SignalGen(fS,tend,fx=54,noisy=0)
-        x,t,_ = SignalGen(fS,tend,fx=24,noisy=0)
-        y,_,_ = SignalGen(fS,tend,fx=37,noisy=0)
-        z,_,_ = SignalGen(fS,tend,fx=41,noisy=0)
+        x,t,_ = SignalGen(fS,tend,fx=13,noisy=0)
+        y,_,_ = SignalGen(fS,tend,fx=17,noisy=0)
+        z,_,_ = SignalGen(fS,tend,fx=54,noisy=0)
+        # x,t,_ = SignalGen(fS,tend,fx=24,noisy=0)
+        # y,_,_ = SignalGen(fS,tend,fx=37,noisy=0)
+        # z,_,_ = SignalGen(fS,tend,fx=41,noisy=0)
         nz,_,_ = SignalGen(fS,tend,Ax=0,fx=0)
         inData = x + y + z + x*y*z + nz
     elif dum == 'coherence':
@@ -3053,10 +3172,31 @@ def TestSignal(whatsig,tend=100,noisy=2,fS=200,f1=19,f2=45):
     return inData,t,float(fS)
 
 
-def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,errlim=1e15,window='hann'):
-# ------------------
-# STFT static method
-# ------------------
+def ApplySTFT(sig,samprate=1.0,subint=512,step=256,nfreq=256,t0=0,detrend=False,errlim=1.0e15,window='hann'):
+    """Calculate short-time Fourier transform (STFT) of time-series.
+
+    Args:
+        sig (:class:`~numpy.ndarray`): Time series to be analyzed.
+        samprate (float): Sampling rate in Hz.
+        subint (int): Subinterval size in samples.
+        step (int): Subinterval step in samples.
+        nfreq (int): Number of frequency bins.
+        t0 (float): Initial time.
+        detrend (bool): Detrend data in each subinterval.
+        errlim (float): Max threshold of mean power spectrum.
+        window (str): Desired window function.
+
+    Returns:
+        list: ``spec,afft,freq_vec,time_vec,err,Ntoss = ApplySTFT(...)``
+
+        * spec (:class:`~numpy.ndarray`) - STFT spectrogram (w/ shape ``(len(sig)/limFreq)``).
+        * afft (:class:`~numpy.ndarray`) - Power spectrum.
+        * freq_vec (:class:`~numpy.ndarray`) - Frequency vector.
+        * time_vec (:class:`~numpy.ndarray`) - Time vector.
+        * err (:class:`~numpy.ndarray`) - Mean spectrogram vs time.
+        * Ntoss (:obj:`int`) - Number of omitted intervals.
+
+    """
     N = min(sig.shape)
     M = 1 + (max(sig.shape) - subint)//step
     lim  = nfreq                    # Most likey, lim = |_ Nyquist/res _|
@@ -3114,9 +3254,27 @@ def ApplySTFT(sig,samprate=1,subint=512,step=256,nfreq=256,t0=0,detrend=False,er
 
 
 def CalcHistVsT(sig,samprate=1.,subint=512,step=256,t0=0,binMax=1.,Nbins=200):
-# ------------------
-# STFT static method
-# ------------------
+    """Calculate amplitude histogram vs. time of time-series.
+
+    Args:
+        sig (:class:`~numpy.ndarray`): Time series to be analyzed.
+        samprate (float): Sampling rate in Hz.
+        subint (int): Subinterval size in samples.
+        step (int): Subinterval step in samples.
+        nfreq (int): Number of frequency bins.
+        t0 (float): Initial time.
+        binMax (float): Max binned amplitude.
+        Nbins (int): Number of amplitude bins.
+
+    Returns:
+        list: ``hist,mh,binvec,time_vec = CalcHistVsT(...)``
+
+        * hist (:class:`~numpy.ndarray`) - Amplitude histogram vs. time.
+        * mh (:class:`~numpy.ndarray`) - Average of histogram over time.
+        * binvec (:class:`~numpy.ndarray`) - Vector of bin locations (amplitudes).
+        * time_vec (:class:`~numpy.ndarray`) - Time vector.
+
+    """
     N = min(sig.shape)
     M = 1 + (max(sig.shape) - subint)//step
     time_vec = np.zeros(M)          # Time vector
@@ -3161,10 +3319,10 @@ def ApplyCWT(sig,samprate=1.0,sigma=3.14,limFreq=2,alphaExp=0.5):
     Returns:
         list: ``CWT,acwt,freq_vec,time_vec = ApplyCWT(...)``
 
-        * CWT (:class:`~numpy.ndarray`) - CWT [size len(sig)/limFreq x len(sig)/2]
-        * acwt (:class:`~numpy.ndarray`) - power spectrum <|CWT|^2> [size len(sig)/limFreq]
-        * freq_vec (:class:`~numpy.ndarray`) - frequency vector [size len(sig)/limFreq]
-        * time_vec (:class:`~numpy.ndarray`) - time vector [size len(sig)/2]
+        * CWT (:class:`~numpy.ndarray`) - CWT (w/ shape ``(len(sig)/limFreq, len(sig)/2, Nseries)``).
+        * acwt (:class:`~numpy.ndarray`) - Power spectrum (w/ length ``len(sig)/limFreq``).
+        * freq_vec (:class:`~numpy.ndarray`) - Frequency vector (w/ length ``len(sig)/limFreq``).
+        * time_vec (:class:`~numpy.ndarray`) - Time vector (w/ length ``len(sig)/2``).
 
     """
     Nsig,N = sig.shape
@@ -3206,9 +3364,20 @@ def ApplyCWT(sig,samprate=1.0,sigma=3.14,limFreq=2,alphaExp=0.5):
 
 
 def SpecToCoherence(spec,lilguy=1e-6):
-# ------------------
-# Cross-spectrum, cross-coherence, coherogram
-# ------------------
+    """Estimate cross-spectrum/-coherence from spectrogram.
+
+    Args:
+        spec (:class:`~numpy.ndarray`): Input spectrogram.
+        lilguy (float): Small value to avoid ``0/0`` errors.
+
+    Returns:
+        list: ``C,cc,cx = SpecToCoherence(...)``
+
+        * C (:class:`~numpy.ndarray`) - Cross-spectrum.
+        * cc (:class:`~numpy.ndarray`) - Cross-coherence spectrum.
+        * xx (:class:`~numpy.ndarray`) - "Coherogram".
+
+    """
     print('Calculating cross-coherence...')     
     ncol = spec.shape[1]
 
@@ -3224,9 +3393,20 @@ def SpecToCoherence(spec,lilguy=1e-6):
 
 
 def SpecToBispec(spec,v=[0,0,0],lilguy=1e-6):
-# ------------------
-# Turns spectrogram to b^2
-# ------------------
+    """Estimate **auto**-bispectrum/-bicoherence spectrum from spectrogram(s).
+
+    Args:
+        spec (:class:`~numpy.ndarray`): Input spectrogram.
+        v (list of int): List of time-series' indices to analyze.
+        lilguy (float): Small value to avoid ``0/0`` errors.
+
+    Returns:
+        list: ``b2,B = SpecToBispec(...)``
+
+        * b2 (:class:`~numpy.ndarray`) - Bicoherence spectrum.
+        * B (:class:`~numpy.ndarray`) - Bispectrum.
+
+    """
     nfreq,slices,_ = spec.shape
 
     lim = nfreq
@@ -3261,9 +3441,20 @@ def SpecToBispec(spec,v=[0,0,0],lilguy=1e-6):
     return b2,B
 
 def SpecToCrossBispec(spec,v=[0,0,0],lilguy=1e-6):
-# ------------------
-# Turns 2 or 3 spectrograms to b^2
-# ------------------
+    """Estimate **cross**-bispectrum/-bicoherence spectrum from spectrogram(s).
+
+    Args:
+        spec (:class:`~numpy.ndarray`): Input spectrogram.
+        v (list of int): List of time-series' indices to analyze.
+        lilguy (float): Small value to avoid ``0/0`` errors.
+
+    Returns:
+        list: ``b2,B = SpecToCrossBispec(...)``
+
+        * b2 (:class:`~numpy.ndarray`) - Cross-bicoherence spectrum.
+        * B (:class:`~numpy.ndarray`) - Cross-bispectrum.
+
+    """
     nfreq,slices,_ = spec.shape
 
     vec = np.arange(-(nfreq-1),nfreq)
@@ -3302,9 +3493,20 @@ def SpecToCrossBispec(spec,v=[0,0,0],lilguy=1e-6):
 
 
 def SpecToTrispec(spec,v=[0,0,0],lilguy=1e-6):
-# ------------------
-# Turns spectrogram to t^2
-# ------------------
+    """Estimate **auto**-trispectrum/-tricoherence spectrum from spectrogram(s).
+
+    Args:
+        spec (:class:`~numpy.ndarray`): Input spectrogram.
+        v (list of int): List of time-series' indices to analyze.
+        lilguy (float): Small value to avoid ``0/0`` errors.
+
+    Returns:
+        list: ``t2,T = SpecToTrispec(...)``
+
+        * t2 (:class:`~numpy.ndarray`) - Tricoherence spectrum.
+        * T (:class:`~numpy.ndarray`) - Trispectrum.
+
+    """
     nfreq,slices,_ = spec.shape
 
     lim = nfreq
@@ -3349,10 +3551,24 @@ def SpecToTrispec(spec,v=[0,0,0],lilguy=1e-6):
 
 
 def GetBispec(spec,v=[0,0,0],lilguy=1e-6,j=0,k=0,rando=False):
-# ------------------
-# Calculates the bicoherence of a single (f1,f2) value
-# ------------------
+    """Estimate **local** bispectrum and bicoherence of a single (f1,f2) value.
 
+    Args:
+        spec (:class:`~numpy.ndarray`): Input spectrogram.
+        v (list of int): List of time-series' indices to analyze.
+        lilguy (float): Small value to avoid ``0/0`` errors.
+        j (int): Index 1.
+        k (int): Index 2.
+        rando (float): Randomization level (``1.0`` if ``True``).
+
+    Returns:
+        list: ``b2,B,Bi = GetBispec(...)``
+
+        * b2 (:obj:`float`) - Bicoherence value.
+        * B (:obj:`complex`) - Bispectrum value.
+        * Bi (:class:`~numpy.ndarray`) - **Local** (i.e., time-dependent) bispectrum.
+
+    """
     #p1 = spec[k,:,v[0]]
     #p2 = spec[j,:,v[1]]
     #s  = spec[j+k,:,v[2]]
@@ -3380,23 +3596,39 @@ def GetBispec(spec,v=[0,0,0],lilguy=1e-6,j=0,k=0,rando=False):
     E12 = sum(e12)            
     E3  = sum(e3)                      
 
-    w = (abs(B)**2)/(E12*E3+lilguy)
+    b2 = (abs(B)**2)/(E12*E3+lilguy)
     
     B = B/len(Bi)
-    return w,B,Bi 
+    return b2,B,Bi 
 
 def GetBispecBootstrap(spec,v=[0,0,0],lilguy=1e-6,j=0,k=0,Ntrials=100):
-# ------------------
-# Calculates b2/bispectrum distribution via bootstrapping
-# ------------------
+    """Estimate mean and std dev of bicoherence for single (f1,f2) value.
 
+    Uses bootstrapping, i.e., resampling w/ replacement.
+
+    Args:
+        spec (:class:`~numpy.ndarray`): Input spectrogram.
+        v (list of int): List of time-series' indices to analyze.
+        lilguy (float): Small value to avoid ``0/0`` errors.
+        j (int): Index 1.
+        k (int): Index 2.
+        Ntrials (int): Number of random trials.
+
+    Returns:
+        list: ``b2boot,Bboot,Bi_meas = GetBispecBootstrap(...)``
+
+        * b2boot (:obj:`float`) - Bootstrap bicoherence value.
+        * Bboot (:obj:`complex`) - Bootstrap bispectrum value.
+        * Bi_meas (:obj:`complex`) - Estimated bispectrum value.
+
+    """
     p1 = np.real( spec[abs(k),:,v[0]] ) + 1j*np.sign(k)*np.imag( spec[abs(k),:,v[0]] )
     p2 = np.real( spec[abs(j),:,v[1]] ) + 1j*np.sign(j)*np.imag( spec[abs(j),:,v[1]] )
     s  = np.real( spec[abs(j+k),:,v[2]] ) + 1j*np.sign(j+k)*np.imag( spec[abs(j+k),:,v[2]] )
 
     N = len(s)
     Bboot = np.zeros(Ntrials,dtype=complex)
-    wboot = np.zeros(Ntrials)
+    b2boot = np.zeros(Ntrials)
     Bi_meas = p1*p2*np.conj(s)
 
     for k in range(Ntrials):
@@ -3415,15 +3647,30 @@ def GetBispecBootstrap(spec,v=[0,0,0],lilguy=1e-6,j=0,k=0,Ntrials=100):
         E12 = sum(e12)            
         E3  = sum(e3)                      
 
-        wboot[k] = (abs(B)**2)/(E12*E3+lilguy)
+        b2boot[k] = (abs(B)**2)/(E12*E3+lilguy)
         Bboot[k] = B/len(Bi)
     
-    return wboot,Bboot,Bi_meas
+    return b2boot,Bboot,Bi_meas
+
 
 def GetPolySpec(spec,f,lilguy=1e-6,rando=False,v=[]):
-# ------------------
-# Calculates the nth-order coherence of a given (f1,f2,...,fn) value
-# ------------------
+    """Estimate the nth-order polyspectrum/polycoherence spectrum of a given (f1,f2,...,fn) value
+
+    Args:
+        spec (:class:`~numpy.ndarray`): Input spectrogram.
+        f (list of int): List of frequencies to analyze.
+        lilguy (float): Small value to avoid ``0/0`` errors.
+        rando (float): Randomization level (``1.0`` if ``True``).
+        v (list): List of time-series' indices.
+
+    Returns:
+        list: ``nCoh,nSpec,nSpec_i*s = GetPolySpec(...)``
+
+        * nCoh (:obj:`float`) - Polycoherence value.
+        * nSpec (:obj:`complex`) - Polyspectrum value.
+        * nSpec_i (:class:`~numpy.ndarray`) - **Local** (i.e., time-dependent) polyspectrum.
+
+    """
 
     N = len(f)
     sumFreq = sum(f)
@@ -3462,24 +3709,43 @@ def GetPolySpec(spec,f,lilguy=1e-6,rando=False,v=[]):
 
 
 def HannWindow(N,q=2):
-# ------------------
-# Hann window
-# ------------------
+    """Hann window (and all powers of sine).
+
+    Args:
+        N (int): Number of samples.
+        q (float): Sine window exponent.
+
+    Returns:
+        :class:`~numpy.ndarray`: Window data.
+    """
     return (np.sin(np.pi*np.arange(N)/(N-1)))**q
     
 
 def FlatTopWindow(N):
-# ------------------
-# Flat-top window
-# ------------------
+    """Flat-top window.
+
+    Args:
+        N (int): Number of samples.
+
+    Returns:
+        :class:`~numpy.ndarray`: Window data.
+    """
     s = 2*np.pi*np.arange(N)/(N-1)
     return 0.22 - 0.42*np.cos(s) + 0.28*np.cos(2*s) - 0.08*np.cos(3*s) + 0.01*np.cos(4*s)
 
 
-def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
-# ------------------
-# Applies quick & dirty bandpass with brickwall
-# ------------------
+def ApplyBandpass(x,fS=1.0,f0=0.25,fband=0.1):
+    """Quick and dirty brickwall bandpass filter.
+
+    Args:
+        x (:class:`~numpy.ndarray`): Input time-series.
+        fS (float): Sampling frequency in Hz.
+        f0 (float): Center frequency (peak of passband).
+        fband (float): Filter bandwidth.
+
+    Returns:
+        :class:`~numpy.ndarray`: Filtered time-series.
+    """
 
     # This is kind of crazy! But without this things might break...
     x = np.reshape(x,[x.shape[0]])
@@ -3500,27 +3766,19 @@ def ApplySimpleFilter(x,fS=1.0,f0=0.25,fband=0.1):
     return np.real(np.fft.ifft(fftx))    # Invert it!
 
 
-def ApplyBandpass(D,df,flim,fband):
-# ------------------
-# Crude, brickwall bandpass
-# ------------------
-    fftD = np.fft.fft(D)
-
-    # Bandpass
-    Klo  = np.ceil((flim - fband )/df).astype(int)
-    Khi  = np.ceil((flim + fband )/df).astype(int)
-
-    fftD[0:Klo] = 0
-    fftD[(-1-Klo+1):-1] = 0
-    fftD[Khi:(-1-Khi+1)] = 0
-
-    return np.real(np.fft.ifft(fftD))
-
-
 def ApplyRealBandpass(D,fS,flim,fband,order=5):
-# ------------------
-# Butterworth bandpass
-# ------------------
+    """Butterworth bandpass filter.
+
+    Args:
+        D (:class:`~numpy.ndarray`): Input time-series.
+        fS (float): Sampling rate in Hz.
+        flim (float): Center frequency (peak of passband).
+        fband (float): Filter bandwidth.
+        order (int): Butterworth filter order.
+
+    Returns:
+        :class:`~numpy.ndarray`: Filtered time-series.
+    """
     lo = flim - fband
     hi = flim + fband
     
@@ -3533,9 +3791,14 @@ def ApplyRealBandpass(D,fS,flim,fband,order=5):
 
 
 def ApplyDetrend(y):
-# ------------------
-# Remove linear trend
-# ------------------
+    """Remove linear trend from data.
+
+    Args:
+        y (:class:`~numpy.ndarray`): Input data.
+
+    Returns:
+        :class:`~numpy.ndarray`: Detrended data.
+    """
     n = len(y)
     dumx  = np.arange(1,n+1) 
     s = (6/(n*(n**2-1))) * (2*sum(dumx*y) - sum(y)*(n+1))
@@ -3568,6 +3831,19 @@ def ScaleToString(scale):
 
 
 def LoadBar(m, M, bar_length=40):
+    """Loading bar animation.
+
+    Args:
+        m (int): Current step.
+        M (int): Total steps.
+        bar_length (int): Length of loading bar.
+
+    .. caution::
+
+        Printing to the shell with ``sys.stdout.write()`` sometimes 
+        takes **forever** when using IDLE... *Need to fix this?*
+
+    """
     ch1 = r'||\-/|||'
     ch2 = r'_.:"^":.'
     fraction = (m+1) / M
@@ -3621,9 +3897,26 @@ def Plot(dats,strings=None,color=None,alpha=1.,marker=None,ms=6,lw=2,ls='-',fsiz
                 minorgrid=True,minorgridColor=[0.9,0.9,0.9],tickweight='bold',xlim=None,ylim=None,forceGrid=False,
                 cmap='CMRmap',cbarNorth=False,cbarweight='none',cbarfsize=None,cbarPad=0.05,vlim=None,cax=None,
                 zlim=None,shrink=0.7,elev=26,azim=-30,roll=0,zoom=0.8,dpi=180,SaveAs=None,figax=None):
-# ------------------
-# All purpose plotting!!!
-# ------------------
+    """All purpose plotting tool!
+
+    .. hint::
+
+        See the dedicated `Jupyter notebook`_ for more info!
+
+    Args:
+        dats (list): Data.
+
+    Returns:
+        list: ``fig,ax,cax = Plot(...)``
+
+        * fig (:obj:`~matplotlib.figure.Figure`) - Polycoherence value.
+        * ax (:obj:`~matplotlib.axes.Axes`) - Polyspectrum value.
+        * cax (:obj:`~matplotlib.axes.Axes`) - **Local** (i.e., time-dependent) polyspectrum.
+
+    .. _Jupyter notebook:
+        https://colab.research.google.com/drive/1NJmjnkhD9wWd_uYRYDWSOEatzS_5Nzm3?usp=sharing
+
+    """
 
     if figax is not None:
         fig = figax[0]
@@ -3712,48 +4005,87 @@ def Plot(dats,strings=None,color=None,alpha=1.,marker=None,ms=6,lw=2,ls='-',fsiz
     return [fig,ax,cax]
 
 def RunDemo():
-# ------------------
-# Demonstration
-# ------------------
+    """Demonstration of :class:`BicAn`."""
     b = BicAn('circle')
     return b
 
 def arrmin(arr):
-# ------------------
-# Matlab-esque min() // Lol dude use np.argmin()
-# ------------------   
+    """Matlab-esque ``min()``.
+    
+    Lol pretty much :func:`~numpy.argmin`.
+
+    Args: 
+        arr (:class:`~numpy.ndarray`): Array in question.
+
+    Returns: 
+        list: ``[<min value>, <min index>]``
+    """  
     m = min(arr)
     index = arr.tolist().index( m )
     return m,index
 
 def dphase_dt(z):
-# ------------------
-# Returns gradient of unwrapped phase lol
-# ------------------ 
+    """Returns gradient of unwrapped phase.
+
+    Args: 
+        z (:class:`~numpy.ndarray`): Input data.
+
+    Returns: 
+        :class:`~numpy.ndarray`: dphase/dt.
+    """
     return np.gradient( np.unwrap(np.angle(z)))
 
 def boxcar_ave(x,N):
-# ------------------
-# Smooths data, attempts to return correct amplitudes
-# ------------------ 
+    """Smooths data, attempts to return correct amplitudes.
+
+    Args: 
+        x (:class:`~numpy.ndarray`): Input data.
+        N (int): Number of samples to smooth.
+
+    Returns:
+        :class:`~numpy.ndarray`: Smoothed data.
+    """
     a = uniform_filter1d( abs(x), size=N )
     # Try to get back to actual amplitudes!
     return a * np.max(abs(x)) / max(a)
 
 def bin_mat(n):
-  # Creates matrix of ...
-  dum = ((np.arange(2**(n-1),2**n).reshape(-1,1) & (2**np.arange(n))) != 0).astype(int)[:,::-1]
-  dum[dum==0] = -1
-  return dum
+    """Creates array of all combinations of ``[+/-1, +/-1, ...]``.
 
-def diff_to_sum_vec(v):
-  v[0] = sum(v)
-  return v
+    Args: 
+        n (int): Number of indices.
+
+    Returns:
+        :class:`~numpy.ndarray`: Output array.
+
+    Example:
+        >>> bin_mat(2)
+        array([[ 1, -1],
+               [ 1,  1]])
+        >>> bin_mat(4)
+        array([[ 1, -1, -1, -1],
+               [ 1, -1, -1,  1],
+               [ 1, -1,  1, -1],
+               [ 1, -1,  1,  1],
+               [ 1,  1, -1, -1],
+               [ 1,  1, -1,  1],
+               [ 1,  1,  1, -1],
+               [ 1,  1,  1,  1]])
+
+    """
+    dum = ((np.arange(2**(n-1),2**n).reshape(-1,1) & (2**np.arange(n))) != 0).astype(int)[:,::-1]
+    dum[dum==0] = -1
+    return dum
 
 def nRandSumLessThanUnity(n):
-# ------------------
-# Outputs n numbers whose sum is < 1
-# ------------------
+    """Outputs n numbers whose sum is < 1.
+
+    Args: 
+        n (int): Number of elements in sum.
+
+    Returns:
+        list: List of :obj:`float` with sum less than unity.
+    """
     foundIt = False
     while not foundIt:
         
@@ -3766,9 +4098,11 @@ def nRandSumLessThanUnity(n):
             return dum
 
 def DrawSimplex(flim):
-# ------------------
-# Draws simplex for trispectrum
-# ------------------
+    """Draws simplex for trispectrum.
+
+    Args: 
+        flim (float): Frequency limit.
+    """
     plt.plot([0,flim/3],     [0,flim/3],     [0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
     plt.plot([flim,flim/3],  [0,flim/3],     [0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
     plt.plot([flim/2,flim/3],[flim/2,flim/3],[0,flim/3],color=[0.5,0.5,0.5], lw=2.5)
