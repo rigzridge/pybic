@@ -113,6 +113,8 @@ along with this program.  If not, see http://www.gnu.org/licenses/.
 #XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # Version History
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 6/04/2026 -> Added a bunch of features to PlotTimeline()
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 6/03/2026 -> Cleaned up some broken docstrings (""" -> r""" and done!)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 6/02/2026 -> Finally debugged colormap radiobuttons; fixed interpolation 
@@ -2714,7 +2716,9 @@ def InstFreqZeroCross(x,dt=1.0,crossType='both',Ninterp=None,T0=0.0):
     return T[np.sort(loc)], freq[lsort] # np.sort(loc)
 
 
-def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,fweight='normal',tickweight='bold',cbarweight='none',grid=True,minorgrid=True,shrink=0.7,cbarfsize=None,forceGrid=False,cbarPad=0.05,minorgridColor=[0.9,0.9,0.9],extend='neither'):
+def PlotLabels(fig,ax,strings=['x','y'],fsize=20,cbarNorth=False,im=None,cax=None,
+    fweight='normal',tickweight='bold',cbarweight='none',grid=True,minorgrid=True,
+    shrink=0.7,cbarfsize=None,forceGrid=False,cbarPad=0.05,minorgridColor=[0.9,0.9,0.9],extend='neither'):
     """General purpose plot labels.
 
     Args:
@@ -3867,7 +3871,8 @@ def LoadBar(m, M, bar_length=40):
     # sys.stdout.flush()
 
 
-def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None,fsize=14):
+def PlotTimeline(x,y,t=None,strings=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None,
+    fsize=14,fweight='normal',xlim=None,ylim=None,cbarNorth=True,forceGrid=True,dpi=180):
     """Plot line with color.
 
     Sourced from https://matplotlib.org/3.1.1/gallery/lines_bars_and_markers/multicolored_line.html.
@@ -3886,8 +3891,10 @@ def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None,fsize=1
     """
     from matplotlib.collections import LineCollection
 
+    plotNow = False
     if fig is None:
-        fig, ax = plt.subplots()
+        plotNow = True
+        fig, ax = plt.subplots(dpi=dpi)
 
     if t is None:
         t = np.linspace(0,1,x.shape[0]) # "time" variable
@@ -3913,6 +3920,22 @@ def PlotTimeline(x,y,t=None,fig=None,ax=None,lw=2,cmap='turbo',cbar=None,fsize=1
         cax.xaxis.tick_top()     
         cax.set_xlabel(cbar,fontsize=fsize) ###, fontweight=fweight)
         # fig.colorbar(line, ax=ax, label=cbar)
+
+    strings = ['x','y','t'] if strings is None else strings
+    cax = PlotLabels(fig,ax,im=line,strings=strings,fsize=fsize,fweight=fweight,cbarNorth=cbarNorth,forceGrid=forceGrid)
+
+    if xlim is not None:
+        ax.set_xlim(xlim[0],xlim[1])
+    else:
+        ax.set_xlim(np.min(x),np.max(x))
+    if ylim is not None:
+        ax.set_ylim(ylim[0],ylim[1])
+    else:
+        ax.set_ylim(np.min(y),np.max(y))
+
+    if plotNow:
+        plt.tight_layout()
+        plt.show()
 
 
 def Plot(dats,strings=None,color=None,alpha=1.,marker=None,ms=6,lw=2,ls='-',fsize=20,fweight='normal',grid=True,
