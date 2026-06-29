@@ -101,4 +101,8 @@ html_theme = 'sphinx_rtd_theme'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. 
 html_static_path = ['_static']
-html_css_files = ['custom_stuff.css']
+html_css_files = ['custom_stuff.css','equation_numbers.css']
+
+# Logo and icon
+html_logo = '../PyBic.png'
+html_favicon = 'PyBicMiniLogo.png'

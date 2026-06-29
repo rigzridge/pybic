@@ -79,7 +79,7 @@ Local polyspectra
    pybic.GetBispecBootstrap
    pybic.GetPolySpec
 
-Plot aides
+Plot aids
 ----------
 
 .. autosummary::

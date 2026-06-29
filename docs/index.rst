@@ -19,7 +19,7 @@ PyBic documentation!
    Updates should be coming throughout 2026...
 
 .. toctree::
-   :caption: Sections
+   :caption: Contents
    :hidden:
 
    Home <self>
